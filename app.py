@@ -29,7 +29,7 @@ def init():
   c.execute('CREATE TABLE IF NOT EXISTS renewals (id INTEGER PRIMARY KEY,order_id INTEGER UNIQUE NOT NULL REFERENCES orders(id),client_id INTEGER NOT NULL REFERENCES clients(id),reset_at INTEGER NOT NULL,new_quota INTEGER NOT NULL,status TEXT NOT NULL DEFAULT "scheduled",error TEXT DEFAULT "")')
   c.execute('CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY,order_id INTEGER,action TEXT NOT NULL,detail TEXT DEFAULT "",at INTEGER NOT NULL)')
   email=os.getenv('ADMIN_EMAIL','').strip().lower();pwd=os.getenv('ADMIN_PASSWORD','')
-  if email and len(pwd)>=12 and not c.execute('SELECT 1 FROM users WHERE admin=1').fetchone():c.execute('INSERT INTO users(email,password,admin) VALUES(?,?,1)',(email,generate_password_hash(pwd)))
+  if email and len(pwd)>=6 and not c.execute('SELECT 1 FROM users WHERE admin=1').fetchone():c.execute('INSERT INTO users(email,password,admin) VALUES(?,?,1)',(email,generate_password_hash(pwd)))
 init()
 def csrf():
  if 'csrf' not in session:session['csrf']=secrets.token_urlsafe(32)
