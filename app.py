@@ -65,7 +65,7 @@ def notify(message):
 def notify_order(oid,proof_path,caption,kind):
  token=os.getenv('TELEGRAM_BOT_TOKEN');chat=os.getenv('TELEGRAM_CHAT_ID')
  if not token or not chat:return
- buttons=([{'text':'Review payment / Approve','callback_data':f'ds:confirm:{oid}'},{'text':'Reject','callback_data':f'ds:reject:{oid}'}] if kind=='new' else [{'text':'Existing customer: verify ownership in Admin','url':os.getenv('PUBLIC_URL','https://digitalservices.payapi.uk').rstrip('/')+'/admin'}])
+ buttons=([{'text':'✅ Approve (payment verified)','callback_data':f'ds:approve:{oid}'},{'text':'Reject','callback_data':f'ds:reject:{oid}'}] if kind=='new' else [{'text':'Existing customer: verify ownership in Admin','url':os.getenv('PUBLIC_URL','https://digitalservices.payapi.uk').rstrip('/')+'/admin'}])
  try:
   with open(proof_path,'rb') as f:
    response=requests.post(f'https://api.telegram.org/bot{token}/sendPhoto',
@@ -303,10 +303,7 @@ def telegram_webhook():
  with conn() as c:row=c.execute('SELECT kind,status FROM orders WHERE id=?',(oid,)).fetchone()
  if not row or row['status']!='pending':answer='Order no longer pending. Check admin panel.'
  elif action=='cancel':answer='Cancelled. Order remains pending.'
- elif action=='confirm':
-  markup={'inline_keyboard':[[{'text':'YES — Payment verified; APPROVE','callback_data':f'ds:approve:{oid}'},{'text':'Cancel','callback_data':f'ds:cancel:{oid}'}]]}
-  requests.post(f'https://api.telegram.org/bot{token}/editMessageReplyMarkup',json={'chat_id':chat_id,'message_id':msg.get('message_id'),'reply_markup':markup},timeout=8)
-  answer='Confirm that bank funds arrived before pressing Approve.'
+ elif action=='confirm':answer='Use the direct Approve button on a new order. Verify bank payment first.'
  elif action=='approve' and row['kind']!='new':answer='Existing-user renewal requires independent ownership verification in the web Admin panel.'
  else:
   # Use the same internal order processing logic as Admin, with a trusted Telegram actor.
@@ -316,6 +313,9 @@ def telegram_webhook():
    decide.__wrapped__(oid,action)
   with conn() as c:state=c.execute('SELECT status FROM orders WHERE id=?',(oid,)).fetchone()
   answer='Order #'+str(oid)+' now '+(state['status'] if state else 'unknown')+'.'
+  try:
+   requests.post(f'https://api.telegram.org/bot{token}/editMessageReplyMarkup',json={'chat_id':chat_id,'message_id':msg.get('message_id'),'reply_markup':{'inline_keyboard':[]}},timeout=8)
+  except requests.RequestException:app.logger.exception('Could not clear processed Telegram order buttons')
  try:
   requests.post(f'https://api.telegram.org/bot{token}/answerCallbackQuery',json={'callback_query_id':callback.get('id'),'text':answer[:180],'show_alert':True},timeout=8)
  except requests.RequestException:app.logger.exception('Failed to answer Telegram callback')
