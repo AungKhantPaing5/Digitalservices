@@ -2,7 +2,7 @@
 const root=document.getElementById('ds-chat-root');if(!root)return;
 const admin=root.dataset.admin==='1',csrf=root.dataset.csrf;let open=false,selected=null,busy=false;
 const el=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n;};
-const fab=el('button','ds-chat-fab','☏');fab.type='button';fab.title='Chat with '+(admin?'customers':'Admin');
+const fab=el('button','ds-chat-fab');fab.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5 9 9 0 0 1-4-.95L3 21l1.95-5.5A9 9 0 0 1 4 11.5 8.5 8.5 0 0 1 12.5 3 8.5 8.5 0 0 1 21 11.5Z"/><path d="M8 11h9M8 14h6"/></svg>';fab.type='button';fab.setAttribute('aria-label','Open support chat');fab.title='Chat with '+(admin?'customers':'Admin');
 const panel=el('section','ds-chat-panel');panel.setAttribute('aria-label','DigitalServices private chat');
 const header=el('div','ds-chat-header');
 const title=el('span','',admin?'Customer Messages':'Admin');
