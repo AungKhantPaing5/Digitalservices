@@ -196,6 +196,15 @@ def add_server():
   flash('Server added. Verify HTTPS API connectivity before approving real orders.','ok')
  except (ValueError,sqlite3.Error) as e:flash(str(e),'bad')
  return redirect('/admin')
+@app.post('/admin/servers/<int:sid>/subscription')
+@admin_needed
+def set_subscription(sid):
+ value=request.form.get('subscription_base','').strip()
+ if not re.fullmatch(r'https://[^\\s?#]+',value):flash('Valid HTTPS subscription base URL required','bad');return redirect('/admin')
+ with conn() as c:c.execute('UPDATE servers SET subscription_base=? WHERE id=?',(value,sid))
+ flash('Subscription base URL saved. Test it against your actual 3x-ui subscription service.','ok')
+ return redirect('/admin')
+
 @app.post('/admin/import/<int:sid>')
 @admin_needed
 def import_clients(sid):
