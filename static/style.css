@@ -67,3 +67,15 @@ footer{border-top:1px solid #252734;padding:30px max(30px,calc((100% - 1180px)/2
 #ds-chat-root .ds-chat-fab:focus-visible{outline:3px solid white;outline-offset:4px}
 #ds-chat-root .ds-chat-panel{bottom:calc(96px + env(safe-area-inset-bottom,0px));right:max(14px,env(safe-area-inset-right,0px));z-index:2147482999}
 @media(max-width:680px){#ds-chat-root .ds-chat-fab{width:58px!important;height:58px!important;min-width:58px;min-height:58px;bottom:calc(18px + env(safe-area-inset-bottom,0px))!important}}
+
+/* Happ instructional video modal */
+.ds-happ-toolbar{display:flex;gap:12px;flex-wrap:wrap;margin:22px 0 4px}
+.ds-guide-modal:not([hidden]){display:flex;position:fixed;inset:0;z-index:2147483500;background:#03040cd9;align-items:center;justify-content:center;padding:16px}
+.ds-guide-modal[hidden]{display:none!important}
+.ds-guide-panel{width:min(450px,100%);max-height:92dvh;display:flex;flex-direction:column;overflow:auto;background:#161824;border:1px solid #625b83;border-radius:18px;box-shadow:0 18px 70px #000e}
+.ds-guide-header{display:flex;align-items:center;justify-content:space-between;padding:14px 17px;gap:10px}
+.ds-guide-header button{background:#343349;border:0;border-radius:9px;padding:5px 12px;color:#fff;font-size:24px;cursor:pointer}
+.ds-guide-panel video{width:100%;max-height:64dvh;background:#070713;object-fit:contain}
+.ds-guide-panel .note{padding:0 17px}
+.ds-guide-links{display:flex;gap:8px;flex-wrap:wrap;padding:0 16px 18px}
+.ds-guide-links a{flex:1;min-width:140px;padding:12px;text-align:center;border-radius:10px;background:#342b67;color:#fff;font-weight:700;font-size:12px}
