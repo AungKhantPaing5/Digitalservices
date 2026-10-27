@@ -206,6 +206,7 @@ def decide(oid,action):
  try:
   s=server(o['server_id']);plan=PLANS[o['plan']]
   if o['kind']=='existing':
+   if request.form.get('ownership_verified')!='yes':raise RuntimeError('Admin must independently verify existing client ownership and acknowledge verification before approval')
    with conn() as c:
     matches=c.execute('SELECT * FROM clients WHERE server_id=? AND (username=? COLLATE NOCASE OR xui_email=? COLLATE NOCASE)',(o['server_id'],o['username'],o['username'])).fetchall()
     if len(matches)!=1:raise RuntimeError(f'Existing username matches {len(matches)} clients. Verify server/client manually; do not auto renew.')
