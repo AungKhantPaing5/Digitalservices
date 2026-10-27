@@ -28,6 +28,7 @@ def init():
   c.execute('CREATE TABLE IF NOT EXISTS orders (id INTEGER PRIMARY KEY,user_id INTEGER NOT NULL REFERENCES users(id),plan TEXT NOT NULL,server_id INTEGER NOT NULL REFERENCES servers(id),client_id INTEGER REFERENCES clients(id),username TEXT,method TEXT NOT NULL,proof TEXT NOT NULL,status TEXT DEFAULT "pending",created INTEGER NOT NULL,expires INTEGER,activation_error TEXT,kind TEXT NOT NULL DEFAULT "new")')
   c.execute('CREATE TABLE IF NOT EXISTS renewals (id INTEGER PRIMARY KEY,order_id INTEGER UNIQUE NOT NULL REFERENCES orders(id),client_id INTEGER NOT NULL REFERENCES clients(id),reset_at INTEGER NOT NULL,new_quota INTEGER NOT NULL,status TEXT NOT NULL DEFAULT "scheduled",error TEXT DEFAULT "")')
   c.execute('CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY,order_id INTEGER,action TEXT NOT NULL,detail TEXT DEFAULT "",at INTEGER NOT NULL)')
+  if not any(x[1]=='subscription_base' for x in c.execute('PRAGMA table_info(servers)')): c.execute('ALTER TABLE servers ADD COLUMN subscription_base TEXT DEFAULT ""')
   email=os.getenv('ADMIN_EMAIL','').strip().lower();pwd=os.getenv('ADMIN_PASSWORD','')
   if email and len(pwd)>=6 and not c.execute('SELECT 1 FROM users WHERE admin=1').fetchone():c.execute('INSERT INTO users(email,password,admin) VALUES(?,?,1)',(email,generate_password_hash(pwd)))
 init()
@@ -60,6 +61,27 @@ def notify(message):
  if token and chat:
   try:requests.post('https://api.telegram.org/bot'+token+'/sendMessage',json={'chat_id':chat,'text':message},timeout=8).raise_for_status()
   except requests.RequestException:app.logger.exception('Telegram delivery failed')
+def notify_order(oid,proof_path,caption,kind):
+ token=os.getenv('TELEGRAM_BOT_TOKEN');chat=os.getenv('TELEGRAM_CHAT_ID')
+ if not token or not chat:return
+ buttons=([{'text':'Review payment / Approve','callback_data':f'ds:confirm:{oid}'},{'text':'Reject','callback_data':f'ds:reject:{oid}'}] if kind=='new' else [{'text':'Existing customer: verify ownership in Admin','url':os.getenv('PUBLIC_URL','https://digitalservices.payapi.uk').rstrip('/')+'/admin'}])
+ try:
+  with open(proof_path,'rb') as f:
+   response=requests.post(f'https://api.telegram.org/bot{token}/sendPhoto',
+    data={'chat_id':chat,'caption':caption[:1024],'reply_markup':json.dumps({'inline_keyboard':[buttons]})},
+    files={'photo':('payment.jpg',f,'image/jpeg')},timeout=20)
+   response.raise_for_status()
+ except (OSError,requests.RequestException):app.logger.exception('Telegram payment photo delivery failed')
+
+def normalize_username(text):
+ return re.sub(r'\\s+','',text or '')
+
+def subscription_link(s,sub_id):
+ base=(s['subscription_base'] or '').strip()
+ if not base.startswith('https://') or not sub_id:raise RuntimeError('Configure HTTPS Subscription Base URL and enable 3x-ui subscription service for this server')
+ if any(ch.isspace() for ch in base):raise RuntimeError('Invalid subscription URL')
+ return base.rstrip('/')+'/'+quote(sub_id,safe='')
+
 def server(id):
  with conn() as c:return c.execute('SELECT * FROM servers WHERE id=? AND enabled=1',(id,)).fetchone()
 def api(s,method,path,payload=None):
@@ -136,8 +158,8 @@ def buy(plan):
  if plan not in PLANS:abort(404)
  with conn() as c:servers=c.execute('SELECT id,name FROM servers WHERE enabled=1 ORDER BY id').fetchall()
  if request.method=='POST':
-  kind=request.form.get('kind');sid=request.form.get('server_id',type=int);username=request.form.get('username','').strip();method=request.form.get('method');upload=request.files.get('proof')
-  if kind not in ('new','existing') or not server(sid) or method not in PAYMENTS or (kind=='existing' and (not username or len(username)>150)) or not upload:
+  kind=request.form.get('kind');sid=request.form.get('server_id',type=int);username=normalize_username(request.form.get('username',''));method=request.form.get('method');upload=request.files.get('proof')
+  if not re.fullmatch(r'[A-Za-z0-9_.-]{3,64}',username) or kind not in ('new','existing') or not server(sid) or method not in PAYMENTS or (kind=='existing' and (not username or len(username)>150)) or not upload:
    flash('Check VPN type, server, username, and payment details','bad')
   else:
    try:
@@ -145,7 +167,7 @@ def buy(plan):
     if im.format not in ('JPEG','PNG','WEBP'):raise ValueError('Unsupported image')
     filename=secrets.token_hex(24)+'.jpg';im.convert('RGB').save(DATA+'/proofs/'+filename,format='JPEG',quality=85)
     with conn() as c:oid=c.execute('INSERT INTO orders(user_id,plan,server_id,username,method,proof,created,kind) VALUES(?,?,?,?,?,?,?,?)',(identity()['id'],plan,sid,username,method,filename,now(),kind)).lastrowid
-    notify(f'DigitalServices order #{oid}: {kind} / {username or "new"} / plan {plan} / payment {method}. Verify in admin panel.')
+    notify_order(oid,DATA+'/proofs/'+filename,f'🧾 Order #{oid} | {kind.upper()} | Username: {username} | Plan: {plan} | Payment: {method}. Confirm actual bank receipt before approval.',kind)
     flash('Payment submitted. Admin will verify before activation.','ok');return redirect('/dashboard')
    except (UnidentifiedImageError,ValueError,OSError):flash('Upload a valid JPG, PNG, or WEBP image under 5MB','bad')
  return render_template('buy.html',plan=plan,servers=servers)
@@ -169,7 +191,7 @@ def add_server():
  name=request.form.get('name','').strip();url=request.form.get('url','').strip().rstrip('/');token=request.form.get('token','').strip()
  try:
   if not name or not url.startswith('https://') or not token or not request.form.get('host','').strip():raise ValueError('Name, HTTPS panel URL, token and VPN public host required')
-  with conn() as c:c.execute('INSERT INTO servers(name,url,token,inbound,host,public_key,sni,short_id,flow) VALUES(?,?,?,?,?,?,?,?,?)',(name,url,crypto.encrypt(token.encode()).decode(),int(request.form['inbound']),request.form['host'].strip(),request.form.get('public_key',''),request.form.get('sni',''),request.form.get('short_id',''),request.form.get('flow','xtls-rprx-vision')))
+  with conn() as c:c.execute('INSERT INTO servers(name,url,token,inbound,host,public_key,sni,short_id,flow,subscription_base) VALUES(?,?,?,?,?,?,?,?,?,?)',(name,url,crypto.encrypt(token.encode()).decode(),int(request.form['inbound']),request.form['host'].strip(),request.form.get('public_key',''),request.form.get('sni',''),request.form.get('short_id',''),request.form.get('flow','xtls-rprx-vision'),request.form.get('subscription_base','').strip()))
   flash('Server added. Verify HTTPS API connectivity before approving real orders.','ok')
  except (ValueError,sqlite3.Error) as e:flash(str(e),'bad')
  return redirect('/admin')
@@ -231,9 +253,10 @@ def decide(oid,action):
      c.execute('UPDATE orders SET status="active",client_id=?,expires=? WHERE id=?',(cl['id'],new_expiry,oid))
   else:
    inbound=api(s,'GET',f'/panel/api/inbounds/get/{s["inbound"]}')
-   cid=str(uuid.uuid4());email=f'ds_{oid}_{secrets.token_hex(4)}';expiry=plus_months(now(),plan['months'])
-   key=link(s,inbound,cid,'DigitalServices-'+str(oid))
-   item={'id':cid,'email':email,'enable':True,'expiryTime':expiry,'totalGB':plan['gb']*1024**3,'limitIp':plan['devices'],'flow':s['flow']}
+   cid=str(uuid.uuid4());email=f'ds_{oid}_{username}';expiry=plus_months(now(),plan['months'])
+   sub_id=secrets.token_urlsafe(18)
+   key=subscription_link(s,sub_id)
+   item={'id':cid,'email':email,'subId':sub_id,'enable':True,'expiryTime':expiry,'totalGB':plan['gb']*1024**3,'limitIp':plan['devices'],'flow':s['flow']}
    api(s,'POST','/panel/api/clients/add',{'client':item,'inboundIds':[s['inbound']]})
    with conn() as c:
     clid=c.execute('INSERT INTO clients(server_id,xui_id,xui_email,username,inbound,expiry,quota,devices,owner,vpn_key,status) VALUES(?,?,?,?,?,?,?,?,?,?,?)',(s['id'],cid,email,email,s['inbound'],expiry,item['totalGB'],plan['devices'],o['user_id'],key,'linked')).lastrowid
