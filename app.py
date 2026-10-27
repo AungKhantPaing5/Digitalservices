@@ -247,19 +247,20 @@ def decide(oid,action):
     if c.execute("SELECT 1 FROM renewals WHERE client_id=? AND status='scheduled'",(cl['id'],)).fetchone():raise RuntimeError('Renewal already scheduled on this client')
    inbound,details=client_details(s,cl)
    if details.get('email')!=cl['xui_email']:raise RuntimeError('3x-ui metadata mismatch')
+   subscription=subscription_link(s,details.get('subId'))
    actual_expiry=int(details.get('expiryTime') or 0)
    start=max(now(),actual_expiry);new_expiry=plus_months(start,plan['months'])
    if actual_expiry>now():
     details['expiryTime']=new_expiry
     api(s,'POST',f'/panel/api/clients/update/{quote(cl["xui_email"],safe="")}',details)
     with conn() as c:
-     c.execute('UPDATE clients SET owner=?,expiry=?,status="linked" WHERE id=?',(o['user_id'],new_expiry,cl['id']))
+     c.execute('UPDATE clients SET owner=?,expiry=?,vpn_key=?,status="linked" WHERE id=?',(o['user_id'],new_expiry,subscription,cl['id']))
      c.execute('INSERT INTO renewals(order_id,client_id,reset_at,new_quota) VALUES(?,?,?,?)',(oid,cl['id'],actual_expiry,plan['gb']*1024**3))
      c.execute('UPDATE orders SET status="scheduled",client_id=?,expires=? WHERE id=?',(cl['id'],new_expiry,oid))
    else:
     apply_client(s,cl,plan,new_expiry,True)
     with conn() as c:
-     c.execute('UPDATE clients SET owner=?,expiry=?,quota=?,devices=?,status="linked" WHERE id=?',(o['user_id'],new_expiry,plan['gb']*1024**3,plan['devices'],cl['id']))
+     c.execute('UPDATE clients SET owner=?,expiry=?,quota=?,devices=?,vpn_key=?,status="linked" WHERE id=?',(o['user_id'],new_expiry,plan['gb']*1024**3,plan['devices'],subscription,cl['id']))
      c.execute('UPDATE orders SET status="active",client_id=?,expires=? WHERE id=?',(cl['id'],new_expiry,oid))
   else:
    inbound=api(s,'GET',f'/panel/api/inbounds/get/{s["inbound"]}')
