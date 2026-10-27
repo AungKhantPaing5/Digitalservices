@@ -7,7 +7,7 @@ from flask import Flask,request,render_template,redirect,url_for,session,flash,a
 from werkzeug.security import generate_password_hash,check_password_hash
 from PIL import Image,UnidentifiedImageError
 from cryptography.fernet import Fernet
-from cryptography.hazmat.primitives import urlsafe_b64encode
+from base64 import urlsafe_b64encode
 
 DATA=os.getenv('DATA_DIR','/app/data');os.makedirs(DATA,exist_ok=True);os.makedirs(DATA+'/proofs',exist_ok=True)
 DB=DATA+'/app.sqlite3'; app=Flask(__name__);app.secret_key=os.getenv('SECRET_KEY','CHANGE_ME');app.config.update(MAX_CONTENT_LENGTH=5*1024*1024,SESSION_COOKIE_HTTPONLY=True,SESSION_COOKIE_SAMESITE='Lax',SESSION_COOKIE_SECURE=os.getenv('COOKIE_SECURE','1')=='1')
