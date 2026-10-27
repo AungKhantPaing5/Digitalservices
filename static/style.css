@@ -44,3 +44,19 @@ footer{border-top:1px solid #252734;padding:30px max(30px,calc((100% - 1180px)/2
 .err{color:#ff9d9d;overflow-wrap:anywhere}.flash{max-width:1100px;margin:12px auto;padding:13px 20px;border-radius:12px;background:#2a2840;color:#e2d9ff}.flash.bad{background:#452329;color:#ffcece}
 @media(max-width:930px){.hero-card{opacity:.22;right:-90px}.hero h1{font-size:65px}.plans{gap:14px}.plan{padding:28px 20px}}
 @media(max-width:680px){nav{gap:11px;font-size:12px}.nav{padding:18px}.brand{font-size:17px}.logo{width:29px;height:29px;margin-right:3px}.navbtn{display:none}.hero{padding:75px 24px;min-height:575px}.hero h1{font-size:46px;letter-spacing:-2px}.hero-card{right:-145px;top:210px;transform:scale(.76) rotate(8deg)}.hero>p{max-width:350px}.features{margin-top:65px;gap:12px}.plans,.stepgrid,.checkout{grid-template-columns:1fr}.section{padding:65px 22px}.keyrow{flex-direction:column}.orderhead{align-items:flex-start;flex-direction:column}footer{flex-direction:column;text-align:center}}
+
+/* Floating customer support */
+.ds-chat-fab{position:fixed;bottom:22px;right:22px;z-index:1000;width:60px;height:60px;border:1px solid #a9a0ed;border-radius:50%;background:linear-gradient(140deg,#b3a3ff,#7060ce);color:#151020;box-shadow:0 12px 32px #000b;font-size:27px}
+.ds-chat-panel{position:fixed;bottom:93px;right:22px;width:min(385px,calc(100vw - 28px));height:min(525px,calc(100dvh - 130px));z-index:999;display:none;flex-direction:column;border:1px solid #555078;border-radius:19px;background:#171923;box-shadow:0 16px 55px #000c;overflow:hidden}
+.ds-chat-panel.open{display:flex}
+.ds-chat-header{padding:15px 17px;background:#252339;display:flex;align-items:center;justify-content:space-between;font-weight:bold}
+.ds-chat-body{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
+.ds-chat-bubble{max-width:90%;padding:10px 13px;border-radius:14px;background:#34394b;overflow-wrap:anywhere;white-space:pre-wrap;font-size:13px;line-height:1.5}
+.ds-chat-bubble.mine{align-self:flex-end;background:#6d5db8;color:white}
+.ds-chat-bubble small{display:block;opacity:.7;font-size:10px;margin-top:5px}
+.ds-chat-form{display:flex;gap:7px;padding:10px;background:#242734}
+.ds-chat-form input{flex:1;min-width:0;background:#0c0e15;color:white;border:1px solid #515364;border-radius:11px;padding:12px}
+.ds-chat-form button{border:0;border-radius:11px;padding:0 14px;background:#9d87fc;color:#151020;font-weight:bold}
+.ds-chat-inbox{padding:12px;overflow:auto;border-bottom:1px solid #343748;max-height:140px}
+.ds-chat-inbox button{display:block;width:100%;border:0;background:#292c3a;color:white;padding:10px;text-align:left;border-radius:8px;margin-bottom:6px;overflow-wrap:anywhere}
+@media(max-width:680px){.ds-chat-fab{bottom:18px;right:15px}.ds-chat-panel{right:14px;bottom:89px}}
