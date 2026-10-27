@@ -264,7 +264,7 @@ def decide(oid,action):
      c.execute('UPDATE orders SET status="active",client_id=?,expires=? WHERE id=?',(cl['id'],new_expiry,oid))
   else:
    inbound=api(s,'GET',f'/panel/api/inbounds/get/{s["inbound"]}')
-   cid=str(uuid.uuid4());email=f'ds_{oid}_{username}';expiry=plus_months(now(),plan['months'])
+   cid=str(uuid.uuid4());email=f'ds_{oid}_{o["username"]}';expiry=plus_months(now(),plan['months'])
    sub_id=secrets.token_urlsafe(18)
    key=subscription_link(s,sub_id)
    item={'id':cid,'email':email,'subId':sub_id,'enable':True,'expiryTime':expiry,'totalGB':plan['gb']*1024**3,'limitIp':plan['devices'],'flow':s['flow']}
