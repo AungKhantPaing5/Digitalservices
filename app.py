@@ -28,6 +28,8 @@ def init():
   c.execute('CREATE TABLE IF NOT EXISTS orders (id INTEGER PRIMARY KEY,user_id INTEGER NOT NULL REFERENCES users(id),plan TEXT NOT NULL,server_id INTEGER NOT NULL REFERENCES servers(id),client_id INTEGER REFERENCES clients(id),username TEXT,method TEXT NOT NULL,proof TEXT NOT NULL,status TEXT DEFAULT "pending",created INTEGER NOT NULL,expires INTEGER,activation_error TEXT,kind TEXT NOT NULL DEFAULT "new")')
   c.execute('CREATE TABLE IF NOT EXISTS renewals (id INTEGER PRIMARY KEY,order_id INTEGER UNIQUE NOT NULL REFERENCES orders(id),client_id INTEGER NOT NULL REFERENCES clients(id),reset_at INTEGER NOT NULL,new_quota INTEGER NOT NULL,status TEXT NOT NULL DEFAULT "scheduled",error TEXT DEFAULT "")')
   c.execute('CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY,order_id INTEGER,action TEXT NOT NULL,detail TEXT DEFAULT "",at INTEGER NOT NULL)')
+  c.execute('CREATE TABLE IF NOT EXISTS chat_messages (id INTEGER PRIMARY KEY,user_id INTEGER NOT NULL REFERENCES users(id),sender_admin INTEGER NOT NULL DEFAULT 0,body TEXT NOT NULL,created INTEGER NOT NULL)')
+  c.execute('CREATE INDEX IF NOT EXISTS idx_chat_user_created ON chat_messages(user_id,id)')
   if not any(x[1]=='subscription_base' for x in c.execute('PRAGMA table_info(servers)')): c.execute('ALTER TABLE servers ADD COLUMN subscription_base TEXT DEFAULT ""')
   email=os.getenv('ADMIN_EMAIL','').strip().lower();pwd=os.getenv('ADMIN_PASSWORD','')
   if email and len(pwd)>=6 and not c.execute('SELECT 1 FROM users WHERE admin=1').fetchone():c.execute('INSERT INTO users(email,password,admin) VALUES(?,?,1)',(email,generate_password_hash(pwd)))
@@ -36,6 +38,7 @@ def csrf():
  if 'csrf' not in session:session['csrf']=secrets.token_urlsafe(32)
  return session['csrf']
 app.jinja_env.globals['csrf_token']=csrf
+app.jinja_env.filters['expiry_date']=lambda ms: datetime.fromtimestamp(int(ms)/1000,timezone.utc).strftime('%d %b %Y') if ms and int(ms)>0 else 'No expiry'
 @app.before_request
 def check():
  if request.path=='/telegram/webhook':return
@@ -320,6 +323,37 @@ def telegram_webhook():
   requests.post(f'https://api.telegram.org/bot{token}/answerCallbackQuery',json={'callback_query_id':callback.get('id'),'text':answer[:180],'show_alert':True},timeout=8)
  except requests.RequestException:app.logger.exception('Failed to answer Telegram callback')
  return {'ok':True}
+
+
+@app.get('/chat/messages')
+@login_needed
+def chat_messages():
+ user=identity()
+ target=request.args.get('user_id',type=int) if user['admin'] else user['id']
+ if not target:return {'messages':[]}
+ with conn() as c:
+  if user['admin'] and not c.execute('SELECT 1 FROM users WHERE id=? AND admin=0',(target,)).fetchone():abort(404)
+  rows=c.execute('SELECT id,sender_admin,body,created FROM chat_messages WHERE user_id=? ORDER BY id DESC LIMIT 100',(target,)).fetchall()
+ return {'messages':[{'id':r['id'],'sender':'Admin' if r['sender_admin'] else 'Customer','mine':bool(r['sender_admin']) if user['admin'] else not bool(r['sender_admin']),'body':r['body'],'created':datetime.fromtimestamp(r['created']/1000,timezone.utc).strftime('%Y-%m-%d %H:%M UTC')} for r in reversed(rows)]}
+
+@app.post('/chat/send')
+@login_needed
+def chat_send():
+ user=identity()
+ body=(request.form.get('message') or '').strip()
+ if not body or len(body)>1500:abort(400)
+ target=request.form.get('user_id',type=int) if user['admin'] else user['id']
+ with conn() as c:
+  if not target or (user['admin'] and not c.execute('SELECT 1 FROM users WHERE id=? AND admin=0',(target,)).fetchone()):abort(404)
+  c.execute('INSERT INTO chat_messages(user_id,sender_admin,body,created) VALUES(?,?,?,?)',(target,int(bool(user['admin'])),body,now()))
+ return {'ok':True}
+
+@app.get('/admin/chat/inbox')
+@admin_needed
+def chat_inbox():
+ with conn() as c:
+  rows=c.execute('SELECT u.id,u.email,COUNT(m.id) AS total,MAX(m.id) AS last_id FROM users u JOIN chat_messages m ON m.user_id=u.id WHERE u.admin=0 GROUP BY u.id,u.email ORDER BY last_id DESC LIMIT 200').fetchall()
+ return {'conversations':[dict(x) for x in rows]}
 
 @app.get('/health')
 def health():return {'ok':True}
