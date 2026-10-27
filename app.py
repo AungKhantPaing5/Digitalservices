@@ -200,7 +200,7 @@ def add_server():
 @admin_needed
 def set_subscription(sid):
  value=request.form.get('subscription_base','').strip()
- if not re.fullmatch(r'https://[^\\s?#]+',value):flash('Valid HTTPS subscription base URL required','bad');return redirect('/admin')
+ if not re.fullmatch(r'https://[^\s?#]+',value):flash('Valid HTTPS subscription base URL required','bad');return redirect('/admin')
  with conn() as c:c.execute('UPDATE servers SET subscription_base=? WHERE id=?',(value,sid))
  flash('Subscription base URL saved. Test it against your actual 3x-ui subscription service.','ok')
  return redirect('/admin')
