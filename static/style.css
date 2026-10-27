@@ -79,3 +79,13 @@ footer{border-top:1px solid #252734;padding:30px max(30px,calc((100% - 1180px)/2
 .ds-guide-panel .note{padding:0 17px}
 .ds-guide-links{display:flex;gap:8px;flex-wrap:wrap;padding:0 16px 18px}
 .ds-guide-links a{flex:1;min-width:140px;padding:12px;text-align:center;border-radius:10px;background:#342b67;color:#fff;font-weight:700;font-size:12px}
+
+/* Widescreen YouTube-style modal */
+.ds-guide-modal:not([hidden]){align-items:center;justify-content:center;padding:clamp(8px,3vw,30px);backdrop-filter:blur(8px)}
+.ds-guide-panel{width:min(900px,94vw);max-height:94dvh;border-radius:18px}
+.ds-guide-panel video{aspect-ratio:16/9;max-height:min(66dvh,510px);width:100%;object-fit:contain;display:block;background:#050507}
+.ds-guide-header{padding:12px 19px}
+.ds-guide-steps{margin:0 17px 12px;padding:12px 15px;border-radius:9px;background:#222333;color:#c8c7d2;font-size:13px;line-height:1.7}
+.ds-guide-steps summary{cursor:pointer;font-weight:700;color:#e9e5ff}
+.ds-guide-steps ol{padding-left:20px}
+@media(max-width:680px){.ds-guide-panel{width:calc(100vw - 16px);max-height:90dvh;border-radius:12px}.ds-guide-panel video{max-height:48dvh}.ds-guide-header strong{font-size:14px}}
