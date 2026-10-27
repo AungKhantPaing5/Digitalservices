@@ -14,8 +14,8 @@ while True:
     s=server(job['server_id']);inbound,client=client_details(s,job)
     client.update(totalGB=job['new_quota'])
     client['limitIp']={100:1,350:2,700:3}.get(int(job['new_quota']/1024**3),1)
-    api(s,'POST',f'/panel/api/inbounds/updateClient/{quote(job["xui_id"])}',{'id':job['inbound'],'settings':json.dumps({'clients':[client]})})
-    api(s,'POST',f'/panel/api/inbounds/{job["inbound"]}/resetClientTraffic/{quote(job["xui_email"],safe="")}')
+    api(s,'POST',f'/panel/api/clients/update/{quote(job["xui_email"],safe="")}',client)
+    api(s,'POST',f'/panel/api/clients/resetTraffic/{quote(job["xui_email"],safe="")}')
     with conn() as c:
      c.execute('UPDATE renewals SET status="done" WHERE id=?',(job['id'],));c.execute('UPDATE clients SET quota=?,devices=? WHERE id=?',(job['new_quota'],client['limitIp'],job['client_id']))
      c.execute('UPDATE orders SET status="active" WHERE id=?',(job['order_id'],))
