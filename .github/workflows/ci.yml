@@ -1,0 +1,20 @@
+name: DigitalServices checks
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install requirements
+        run: pip install -r requirements.txt
+      - name: Check Python syntax
+        run: python -m compileall -q app.py worker.py tests
+      - name: Run Flask smoke and logic tests
+        run: python -m unittest discover -s tests -v
+      - name: Build Docker image
+        run: docker build -t digitalservices:ci .
