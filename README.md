@@ -55,3 +55,28 @@ Use **https://digitalservices.payapi.uk** (a real DNS hostname), not the single-
 - **Cloudflare Tunnel:** DNS and tunnel must be configured separately, and host `443` is not changed.
 - Back up `data/` and your separately stored `.env` securely. Run only one scheduler.
 - Never commit real `.env`, exported client JSON, payment proofs, user databases, API tokens or VPN credentials.
+
+## Subscription URLs and Telegram approvals
+
+Each server must have its own **HTTPS Subscription Base URL** (for example, `https://subscription.example.com/sub`), configured in the Admin server card. This must point to a live 3x-ui subscription service. New customers see **only** a subscription link, not a raw VLESS URL. Existing imported customers continue to use their original subscription links until verified and reconciled.
+
+New orders require usernames (3–64 letters/digits/period/underscore/hyphen). Whitespace is removed both in the browser and server-side.
+
+Payment screenshot is delivered through Telegram `sendPhoto`. Telegram action buttons are enabled only when a webhook is registered and both the Telegram sender user ID and chat ID match configured administrator values. A 2-click confirmation is used; **new orders only** may be approved directly in Telegram. Existing-account renewals still require independent ownership verification in web Admin.
+
+Add these to `.env`:
+
+```dotenv
+PUBLIC_URL=https://digitalservices.payapi.uk
+TELEGRAM_ADMIN_USER_ID=YOUR_PRIVATE_TELEGRAM_NUMERIC_USER_ID
+TELEGRAM_WEBHOOK_SECRET=GENERATE_A_RANDOM_32_CHARACTER_SECRET
+```
+
+The Bot Token / Chat ID must already be configured. Generate a secret with `python3 -c 'import secrets;print(secrets.token_urlsafe(32))'`, keep it private, and add it to `.env`. Recreate the web service, then register the webhook:
+
+```bash
+docker compose up -d --build web scheduler
+docker compose exec -T web python scripts/setup_telegram_webhook.py
+```
+
+Never use example subscription URLs or payment proof images for real sales. Verify every real payment independently in KPay/Wave/AYA before approving.
