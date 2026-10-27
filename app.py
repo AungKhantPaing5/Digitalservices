@@ -38,6 +38,7 @@ def csrf():
 app.jinja_env.globals['csrf_token']=csrf
 @app.before_request
 def check():
+ if request.path=='/telegram/webhook':return
  if request.method=='POST' and not secrets.compare_digest(request.form.get('_csrf',''),csrf()):abort(400)
 def identity():
  if not session.get('uid'):return None
@@ -269,6 +270,47 @@ def decide(oid,action):
   with conn() as c:c.execute('UPDATE orders SET status="manual_review",activation_error=? WHERE id=?',(str(e)[:250],oid))
   flash('Manual review required: no automatic retry (prevents double provisioning).','bad')
  return redirect('/admin')
+@app.post('/telegram/webhook')
+def telegram_webhook():
+ token=os.getenv('TELEGRAM_BOT_TOKEN','')
+ secret=os.getenv('TELEGRAM_WEBHOOK_SECRET','')
+ chat_id=os.getenv('TELEGRAM_CHAT_ID','')
+ admin_id=os.getenv('TELEGRAM_ADMIN_USER_ID','')
+ if not token or len(secret)<24 or not admin_id or not chat_id:abort(503)
+ supplied=request.headers.get('X-Telegram-Bot-Api-Secret-Token','')
+ if not secrets.compare_digest(supplied,secret):abort(403)
+ payload=request.get_json(silent=True) or {}
+ callback=payload.get('callback_query') or {}
+ sender=callback.get('from') or {}
+ msg=callback.get('message') or {}
+ chat=msg.get('chat') or {}
+ if str(sender.get('id'))!=str(admin_id) or str(chat.get('id'))!=str(chat_id):abort(403)
+ data=callback.get('data','')
+ match=re.fullmatch(r'ds:(confirm|approve|reject|cancel):(\\d+)',data)
+ if not match:return {'ok':True}
+ action,oid=match.group(1),int(match.group(2))
+ answer='Request received.'
+ with conn() as c:row=c.execute('SELECT kind,status FROM orders WHERE id=?',(oid,)).fetchone()
+ if not row or row['status']!='pending':answer='Order no longer pending. Check admin panel.'
+ elif action=='cancel':answer='Cancelled. Order remains pending.'
+ elif action=='confirm':
+  markup={'inline_keyboard':[[{'text':'YES — Payment verified; APPROVE','callback_data':f'ds:approve:{oid}'},{'text':'Cancel','callback_data':f'ds:cancel:{oid}'}]]}
+  requests.post(f'https://api.telegram.org/bot{token}/editMessageReplyMarkup',json={'chat_id':chat_id,'message_id':msg.get('message_id'),'reply_markup':markup},timeout=8)
+  answer='Confirm that bank funds arrived before pressing Approve.'
+ elif action=='approve' and row['kind']!='new':answer='Existing-user renewal requires independent ownership verification in the web Admin panel.'
+ else:
+  # Use the same internal order processing logic as Admin, with a trusted Telegram actor.
+  # The before_request CSRF check is deliberately not bypassed for any normal web request.
+  with app.test_request_context('/admin/order/'+str(oid)+'/'+action,method='POST',data={'_csrf':'trusted','ownership_verified':''}):
+   # Unwrap only the admin decorator; the Telegram webhook already authenticated admin sender & chat.
+   decide.__wrapped__(oid,action)
+  with conn() as c:state=c.execute('SELECT status FROM orders WHERE id=?',(oid,)).fetchone()
+  answer='Order #'+str(oid)+' now '+(state['status'] if state else 'unknown')+'.'
+ try:
+  requests.post(f'https://api.telegram.org/bot{token}/answerCallbackQuery',json={'callback_query_id':callback.get('id'),'text':answer[:180],'show_alert':True},timeout=8)
+ except requests.RequestException:app.logger.exception('Failed to answer Telegram callback')
+ return {'ok':True}
+
 @app.get('/health')
 def health():return {'ok':True}
 if __name__=='__main__':app.run(host='0.0.0.0',port=8000)
