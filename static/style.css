@@ -60,3 +60,10 @@ footer{border-top:1px solid #252734;padding:30px max(30px,calc((100% - 1180px)/2
 .ds-chat-inbox{padding:12px;overflow:auto;border-bottom:1px solid #343748;max-height:140px}
 .ds-chat-inbox button{display:block;width:100%;border:0;background:#292c3a;color:white;padding:10px;text-align:left;border-radius:8px;margin-bottom:6px;overflow-wrap:anywhere}
 @media(max-width:680px){.ds-chat-fab{bottom:18px;right:15px}.ds-chat-panel{right:14px;bottom:89px}}
+
+/* Persistent circular support launcher, safely above mobile browser controls */
+#ds-chat-root .ds-chat-fab{position:fixed!important;right:max(18px,env(safe-area-inset-right,0px))!important;bottom:calc(22px + env(safe-area-inset-bottom,0px))!important;display:grid!important;place-items:center;width:62px!important;height:62px!important;min-width:62px;min-height:62px;padding:0!important;border-radius:9999px!important;aspect-ratio:1/1;z-index:2147483000!important;box-shadow:0 10px 30px #000a,0 0 0 4px #ae9bff25,inset 0 2px 3px #ffffff80}
+#ds-chat-root .ds-chat-fab svg{width:27px;height:27px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+#ds-chat-root .ds-chat-fab:focus-visible{outline:3px solid white;outline-offset:4px}
+#ds-chat-root .ds-chat-panel{bottom:calc(96px + env(safe-area-inset-bottom,0px));right:max(14px,env(safe-area-inset-right,0px));z-index:2147482999}
+@media(max-width:680px){#ds-chat-root .ds-chat-fab{width:58px!important;height:58px!important;min-width:58px;min-height:58px;bottom:calc(18px + env(safe-area-inset-bottom,0px))!important}}
