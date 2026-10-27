@@ -75,7 +75,7 @@ def notify_order(oid,proof_path,caption,kind):
  except (OSError,requests.RequestException):app.logger.exception('Telegram payment photo delivery failed')
 
 def normalize_username(text):
- return re.sub(r'\\s+','',text or '')
+ return re.sub(r'\s+','',text or '')
 
 def subscription_link(s,sub_id):
  base=(s['subscription_base'] or '').strip()
@@ -286,7 +286,7 @@ def telegram_webhook():
  chat=msg.get('chat') or {}
  if str(sender.get('id'))!=str(admin_id) or str(chat.get('id'))!=str(chat_id):abort(403)
  data=callback.get('data','')
- match=re.fullmatch(r'ds:(confirm|approve|reject|cancel):(\\d+)',data)
+ match=re.fullmatch(r'ds:(confirm|approve|reject|cancel):(\d+)',data)
  if not match:return {'ok':True}
  action,oid=match.group(1),int(match.group(2))
  answer='Request received.'
