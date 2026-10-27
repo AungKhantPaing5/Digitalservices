@@ -95,8 +95,8 @@ def link(s,inbound,cid,label):
  return f'vless://{cid}@{s["host"]}:{inbound["port"]}?{urlencode(q)}#{quote(label)}'
 def apply_client(s,cl,plan,expiry,do_reset):
  inbound,details=client_details(s,cl);details.update(enable=True,expiryTime=expiry,totalGB=plan['gb']*1024**3,limitIp=plan['devices'])
- api(s,'POST',f'/panel/api/inbounds/updateClient/{quote(cl["xui_id"])}',{'id':cl['inbound'],'settings':json.dumps({'clients':[details]})})
- if do_reset:api(s,'POST',f'/panel/api/inbounds/{cl["inbound"]}/resetClientTraffic/{quote(cl["xui_email"],safe="")}')
+ api(s,'POST',f'/panel/api/clients/update/{quote(cl["xui_email"],safe="")}',details)
+ if do_reset:api(s,'POST',f'/panel/api/clients/resetTraffic/{quote(cl["xui_email"],safe="")}')
  return inbound
 
 @app.get('/')
@@ -219,7 +219,7 @@ def decide(oid,action):
    start=max(now(),actual_expiry);new_expiry=plus_months(start,plan['months'])
    if actual_expiry>now():
     details['expiryTime']=new_expiry
-    api(s,'POST',f'/panel/api/inbounds/updateClient/{quote(cl["xui_id"])}',{'id':cl['inbound'],'settings':json.dumps({'clients':[details]})})
+    api(s,'POST',f'/panel/api/clients/update/{quote(cl["xui_email"],safe="")}',details)
     with conn() as c:
      c.execute('UPDATE clients SET owner=?,expiry=?,status="linked" WHERE id=?',(o['user_id'],new_expiry,cl['id']))
      c.execute('INSERT INTO renewals(order_id,client_id,reset_at,new_quota) VALUES(?,?,?,?)',(oid,cl['id'],actual_expiry,plan['gb']*1024**3))
@@ -234,7 +234,7 @@ def decide(oid,action):
    cid=str(uuid.uuid4());email=f'ds_{oid}_{secrets.token_hex(4)}';expiry=plus_months(now(),plan['months'])
    key=link(s,inbound,cid,'DigitalServices-'+str(oid))
    item={'id':cid,'email':email,'enable':True,'expiryTime':expiry,'totalGB':plan['gb']*1024**3,'limitIp':plan['devices'],'flow':s['flow']}
-   api(s,'POST','/panel/api/inbounds/addClient',{'id':s['inbound'],'settings':json.dumps({'clients':[item]})})
+   api(s,'POST','/panel/api/clients/add',{'client':item,'inboundIds':[s['inbound']]})
    with conn() as c:
     clid=c.execute('INSERT INTO clients(server_id,xui_id,xui_email,username,inbound,expiry,quota,devices,owner,vpn_key,status) VALUES(?,?,?,?,?,?,?,?,?,?,?)',(s['id'],cid,email,email,s['inbound'],expiry,item['totalGB'],plan['devices'],o['user_id'],key,'linked')).lastrowid
     c.execute('UPDATE orders SET status="active",client_id=?,expires=? WHERE id=?',(clid,expiry,oid))
