@@ -89,3 +89,14 @@ footer{border-top:1px solid #252734;padding:30px max(30px,calc((100% - 1180px)/2
 .ds-guide-steps summary{cursor:pointer;font-weight:700;color:#e9e5ff}
 .ds-guide-steps ol{padding-left:20px}
 @media(max-width:680px){.ds-guide-panel{width:calc(100vw - 16px);max-height:90dvh;border-radius:12px}.ds-guide-panel video{max-height:48dvh}.ds-guide-header strong{font-size:14px}}
+
+/* Admin tab navigation */
+.ds-admin-tabs{display:flex;gap:10px;overflow-x:auto;flex-wrap:nowrap;padding:10px 0 18px;margin:18px 0 20px;border-bottom:1px solid #514766;scrollbar-width:thin}
+.ds-admin-tabs button{appearance:none;white-space:nowrap;flex:0 0 auto;border:1px solid #55506d;background:#222333;color:#d0cce7;padding:13px 18px;border-radius:13px;font:inherit;font-size:14px;font-weight:600;cursor:pointer;transition:background .18s,transform .18s}
+.ds-admin-tabs button:hover{background:#35304d}
+.ds-admin-tabs button.active,.ds-admin-tabs button[aria-selected=true]{background:linear-gradient(130deg,#a993ff,#7460d7);border-color:#b8a7ff;color:#141021;box-shadow:0 6px 19px #6b51c64d}
+.ds-admin-tabs button:focus-visible{outline:2px solid white;outline-offset:3px}
+.ds-tab-panel[hidden]{display:none!important}
+.ds-admin-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.ds-server-editor{margin:14px 0}.ds-server-editor summary{cursor:pointer;font-weight:700;padding:10px 0;color:#b7a6ff}
+@media(max-width:700px){.ds-admin-tabs{margin:14px -10px;padding:10px 10px 15px}.ds-admin-tabs button{padding:11px 13px;font-size:12px}.ds-admin-summary{grid-template-columns:1fr}}
