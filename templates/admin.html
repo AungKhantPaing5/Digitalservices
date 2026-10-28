@@ -1,4 +1,13 @@
-{% extends 'base.html' %}{% block body %}<section class="inner wide"><div class="eyebrow">DIGITALSERVICES CONTROL CENTER</div><h2>Admin <em>dashboard.</em></h2><p class="sub">Confirm payments and verify existing customer identity before provisioning. Failed orders require manual reconciliation.</p><nav class="ds-admin-tabs" aria-label="Admin sections">
+{% extends 'base.html' %}{% block body %}<section class="inner wide"><div class="eyebrow">DIGITALSERVICES CONTROL CENTER</div><h2>Admin <em>dashboard.</em></h2><p class="sub">Confirm payments and verify existing customer identity before provisioning. Failed orders require manual reconciliation.</p><style>
+/* Critical admin 3D skin: template-inline to bypass stale edge/browser CSS cache */
+body .ds-admin-tabs{display:flex!important;gap:18px!important;overflow-x:auto;padding:22px 10px 32px!important;margin:18px 0 22px!important;perspective:850px;border:0!important}
+body .ds-admin-tabs>button{appearance:none!important;position:relative;display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;padding:17px 22px!important;min-height:60px;color:#f8f4ff!important;background:linear-gradient(155deg,#77708f 0%,#433c5d 36%,#211d34 100%)!important;border:2px solid #a79bc6!important;border-bottom:6px solid #191126!important;border-radius:18px!important;box-shadow:inset 0 3px 2px #ffffff70,inset 0 -4px 7px #07051288,0 10px 0 #0c0917,0 19px 28px #000b!important;text-shadow:0 2px 2px #000!important;font-weight:800!important;font-size:15px!important;transform:translateY(-5px)!important;transition:transform .16s,box-shadow .16s}
+body .ds-admin-tabs>button[aria-selected=true]{color:#160e30!important;text-shadow:0 1px 0 #fff9!important;background:linear-gradient(150deg,#f1ddff 0%,#ba9aff 48%,#7955e1 100%)!important;border-color:#f3e3ff!important;border-bottom:5px solid #523388!important;box-shadow:inset 0 3px 4px #fff9,0 5px 0 #3f2b72,0 14px 34px #7e5bdd99!important;transform:translateY(1px)!important}
+body .ds-admin-tabs>button:hover:not([aria-selected=true]){transform:translateY(-9px)!important;filter:brightness(1.15)}
+body .ds-tab-panel>.panel,body .ds-tab-panel .panel.order{border-radius:26px!important;border:2px solid #6c6487!important;border-bottom:6px solid #080713!important;background:linear-gradient(145deg,#303346,#181923 78%)!important;box-shadow:inset 0 3px 2px #ffffff29,0 10px 0 #0a0a14,0 24px 42px #0009!important;margin-bottom:35px!important}
+body .ds-tab-panel[hidden]{display:none!important}
+@media(max-width:680px){body .ds-admin-tabs{gap:12px!important}body .ds-admin-tabs>button{padding:12px 15px!important;min-height:52px;font-size:13px!important;border-radius:13px!important}}
+</style><nav class="ds-admin-tabs" aria-label="Admin sections">
 <button type="button" data-tab="overview" aria-selected="true">◈ Overview</button>
 <button type="button" data-tab="servers">🖥 VPN Servers</button>
 <button type="button" data-tab="orders">🧾 Orders</button>
