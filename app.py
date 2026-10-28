@@ -367,6 +367,70 @@ def chat_inbox():
   rows=c.execute('SELECT u.id,u.email,COUNT(m.id) AS total,MAX(m.id) AS last_id FROM users u JOIN chat_messages m ON m.user_id=u.id WHERE u.admin=0 GROUP BY u.id,u.email ORDER BY last_id DESC LIMIT 200').fetchall()
  return {'conversations':[dict(x) for x in rows]}
 
+
+@app.post('/dashboard/recover/<int:cid>')
+@login_needed
+def recover_key(cid):
+ u=identity()
+ with conn() as c:cl=c.execute('SELECT * FROM clients WHERE id=? AND owner=?',(cid,u['id'])).fetchone()
+ if not cl:abort(404)
+ try:
+  srv=server(cl['server_id'])
+  inbound,details=client_details(srv,cl)
+  link_value=subscription_link(srv,details.get('subId'))
+  with conn() as c:c.execute('UPDATE clients SET vpn_key=? WHERE id=? AND owner=?',(link_value,cid,u['id']))
+  flash('Original subscription link restored for this account.','ok')
+ except Exception:
+  app.logger.exception('Subscription recovery failed')
+  flash('Could not restore the subscription link; contact Admin in chat.','bad')
+ return redirect('/dashboard')
+
+@app.get('/admin/maintenance')
+@admin_needed
+def maintenance_status():
+ cutoff=now()-int(os.getenv('PAYMENT_PROOF_RETENTION_DAYS','90'))*86400000
+ with conn() as c:
+  count=c.execute("SELECT COUNT(*) n FROM orders WHERE created<? AND status IN ('active','rejected','scheduled') AND proof!=''",(cutoff,)).fetchone()['n']
+  chats=c.execute('SELECT COUNT(*) n FROM chat_messages').fetchone()['n']
+  dbbytes=os.path.getsize(DB) if os.path.exists(DB) else 0
+ return {'database_mb':round(dbbytes/1048576,2),'chat_messages':chats,'payment_proofs_eligible_for_cleanup':count,'retention_days':int(os.getenv('PAYMENT_PROOF_RETENTION_DAYS','90'))}
+
+@app.post('/admin/maintenance/prune')
+@admin_needed
+def maintenance_prune():
+ if request.form.get('confirm')!='DELETE_OLD_PROOFS':abort(400)
+ days=max(30,int(os.getenv('PAYMENT_PROOF_RETENTION_DAYS','90')))
+ cutoff=now()-days*86400000
+ n=0
+ with conn() as c:
+  rows=c.execute("SELECT id,proof FROM orders WHERE created<? AND status IN ('active','rejected','scheduled') AND proof!='' LIMIT 100",(cutoff,)).fetchall()
+  for o in rows:
+   path=os.path.join(DATA,'proofs',os.path.basename(o['proof']))
+   try:
+    if os.path.isfile(path):os.unlink(path)
+   except OSError:
+    app.logger.exception('Proof cleanup failed')
+    continue
+   c.execute("UPDATE orders SET proof='' WHERE id=?",(o['id'],))
+   n+=1
+ flash(f'Cleaned {n} old payment images (order history preserved).','ok')
+ return redirect('/admin')
+
+@app.get('/admin/server-health')
+@admin_needed
+def server_health():
+ # Panel latency is a reachability diagnostic, NOT proof of ISP traffic throttling.
+ results=[]
+ with conn() as c:rows=c.execute('SELECT * FROM servers ORDER BY id LIMIT 50').fetchall()
+ for srv in rows:
+  try:
+   start=time.monotonic()
+   api(srv,'GET','/panel/api/inbounds/list')
+   results.append({'server':srv['name'],'api':'reachable','latency_ms':round((time.monotonic()-start)*1000)})
+  except (requests.RequestException,RuntimeError,ValueError) as e:
+   results.append({'server':srv['name'],'api':'error','reason':type(e).__name__})
+ return {'note':'Panel API reachability/latency only. This cannot determine ISP throttling; use controlled iperf3 and multi-provider comparisons.', 'servers':results}
+
 @app.get('/health')
 def health():return {'ok':True}
 if __name__=='__main__':app.run(host='0.0.0.0',port=8000)
