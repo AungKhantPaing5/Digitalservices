@@ -13,7 +13,16 @@ try:
  proc=subprocess.run(['speedtest-cli','--json','--secure'],capture_output=True,text=True,timeout=150,check=True)
  data=json.loads(proc.stdout)
  if data.get('error'):raise ValueError(data['error'])
- payload={'download_mbps':round(float(data['download'])*8/1e6,2),'upload_mbps':round(float(data['upload'])*8/1e6,2),'ping_ms':round(float(data['ping']),2)}
+ ping_ms=float(data['ping'])
+ if not 0<=ping_ms<60000:
+  # Some speedtest-cli endpoints incorrectly return 1800000 ms.
+  # Ping a public resolver as a separate fallback measurement, not the test server.
+  import re
+  p=subprocess.run(['ping','-n','-c','3','-W','3','1.1.1.1'],capture_output=True,text=True,timeout=15)
+  match=re.search(r'(?:rtt|round-trip) min/avg/max/(?:mdev|stddev) = [0-9.]+/([0-9.]+)/',p.stdout)
+  if not match:raise ValueError('Invalid speedtest latency; independent ICMP ping failed. No data submitted.')
+  ping_ms=float(match.group(1))
+ payload={'download_mbps':round(float(data['download'])*8/1e6,2),'upload_mbps':round(float(data['upload'])*8/1e6,2),'ping_ms':round(ping_ms,2)}
  req=urllib.request.Request(f'{base}/monitoring/report/{sid}',json.dumps(payload).encode(),headers={'Content-Type':'application/json','X-DigitalServices-Agent':secret},method='POST')
  with urllib.request.urlopen(req,timeout=20) as res:
   print('Reported:',res.status,'download Mbps:',payload['download_mbps'],'upload Mbps:',payload['upload_mbps'],'ping ms:',payload['ping_ms'])
