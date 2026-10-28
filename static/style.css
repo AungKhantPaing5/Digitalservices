@@ -100,3 +100,16 @@ footer{border-top:1px solid #252734;padding:30px max(30px,calc((100% - 1180px)/2
 .ds-admin-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
 .ds-server-editor{margin:14px 0}.ds-server-editor summary{cursor:pointer;font-weight:700;padding:10px 0;color:#b7a6ff}
 @media(max-width:700px){.ds-admin-tabs{margin:14px -10px;padding:10px 10px 15px}.ds-admin-tabs button{padding:11px 13px;font-size:12px}.ds-admin-summary{grid-template-columns:1fr}}
+
+/* Elevated 3D admin experience */
+.ds-admin-tabs{padding:15px 10px 23px;gap:14px;border-bottom:0;perspective:1000px}
+.ds-admin-tabs button{position:relative;background:linear-gradient(155deg,#343451 0%,#1d1d33 56%,#131526 100%);color:#eeeaff;border:1px solid #676184;border-bottom:3px solid #0b0a18;border-radius:16px;padding:15px 20px;box-shadow:inset 0 1px 0 #aaa0cc55,0 6px 0 #111025,0 12px 22px #05040a99;text-shadow:0 1px 2px #0009;transform:translateY(0);transition:transform .15s ease,box-shadow .15s ease,background .15s ease}
+.ds-admin-tabs button:hover{background:linear-gradient(145deg,#52477f,#292840);transform:translateY(-3px);box-shadow:inset 0 1px 0 #d5c5ff66,0 9px 0 #17132c,0 15px 25px #05040aaa}
+.ds-admin-tabs button.active,.ds-admin-tabs button[aria-selected=true]{background:linear-gradient(150deg,#d0b9ff,#9a81ef 46%,#7257c6);color:#120c25;border:1px solid #ded0ff;border-bottom:3px solid #513d8d;text-shadow:0 1px 0 #ffffff80;transform:translateY(3px);box-shadow:inset 0 2px 3px #fff9,0 3px 0 #40326a,0 8px 22px #7e5bda55}
+.ds-tab-panel>.panel,.ds-tab-panel>.stepgrid .panel,.ds-admin-summary>.panel{border:1px solid #514b74;background:linear-gradient(155deg,#222434,#151620 76%);box-shadow:inset 0 1px 0 #fff2,0 14px 30px #0008,0 4px 0 #0b0b16;border-radius:24px}
+.ds-tab-panel>.panel{margin-bottom:24px}
+.ds-tab-panel .btn{border-radius:13px;box-shadow:0 5px 0 #251d46,0 9px 20px #0005}
+.ds-tab-panel .btn:hover{transform:translateY(-2px)}
+.ds-tab-panel .btn:active{transform:translateY(3px);box-shadow:0 2px 0 #251d46}
+@media(max-width:700px){.ds-admin-tabs{gap:9px;padding-bottom:17px}.ds-admin-tabs button{padding:12px 13px;border-radius:12px}.ds-tab-panel>.panel{border-radius:18px}}
+@media(prefers-reduced-motion:reduce){.ds-admin-tabs button,.ds-tab-panel .btn{transition:none}}
