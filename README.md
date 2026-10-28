@@ -99,3 +99,23 @@ Set `DS_MONITOR_URL=https://digitalservices.payapi.uk`, `DS_SERVER_ID=<the datab
 The reporting API requires HTTPS and the long shared secret and retains only 100 latest measurements per server. If the secret is leaked, rotate it centrally and update all agents. A separate agent secret per server is a future hardening improvement.
 
 No automatic network-wide throttling claim is made from single-run speed results.
+
+## Server configuration edit and encrypted backup
+
+Admin dashboard now supports editing every configured 3x-ui connection (including new API token, inbound, REALITY parameters, hostname, subscription URL, and Active/Disabled). Disabling a server stops **new** automatic assignment. Editing these fields changes the central application pointer, **not** the actual 3x-ui inbound/client setup or customer VPN subscriptions.
+
+Use **Download Encrypted Server Backup** and **Restore Server Settings** to preserve/restore the configured server registry. Encryption uses a password of at least 12 characters with scrypt-derived Fernet; the backup includes sensitive decrypted 3x-ui API tokens *inside the encrypted archive*. Keep both backup and password secure and separate. Restore is an atomic upsert keyed by original server database IDs, protecting customer foreign keys, but it **does not** remove extra servers and does not migrate clients between 3x-ui installations. Take a full backup before restore.
+
+### Full application data backup (separate from server-settings export)
+In `~/Digitalservices` on host `q`, back up the `.env` file (including its SECRET_KEY), `data/app.sqlite3`, its WAL if any, payment proof directory, and any other files under `data/`. The safest simple complete backup requires a short maintenance window:
+
+```bash
+cd ~/Digitalservices
+docker compose stop web scheduler
+sudo tar --numeric-owner -czf "/root/digitalservices-full-$(date +%Y%m%d-%H%M%S).tar.gz" .env data
+docker compose start web scheduler
+```
+
+The tarball contains **payment receipts, password hashes, customer details and credential secrets**. Restrict it to root, encrypt it before moving off-host and never upload it to public repositories or group chats. To restore, stop web/scheduler, back up the current files first, restore the saved `.env` and `data/` from the archive using a secure offline procedure, then restart the services and verify site health. Do **not** casually restore stale snapshots: recent orders and client links could diverge from 3x-ui. Always reconcile 3x-ui actual state.
+
+Changing provider or endpoint during throttling: a new empty 3x-ui server is **not** an automatic replacement for an old server. Subscription client IDs, REALITY and existing links must be migrated/maintained explicitly. Disabling the old server for new sales is safer than overwriting its settings until migration is validated.
