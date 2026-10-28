@@ -347,7 +347,7 @@ def telegram_webhook():
    if cmd and cmd[0].split('@')[0].lower() in ('/speedtest','/servers'):
     requested=cmd[1] if len(cmd)>1 else None
     lines=monitoring_summary(requested)
-    response='📊 DigitalServices VPN speed results (measured ON each VPN server)\\n'+('\\n'.join(lines) if lines else 'Server not found')+'\\nThese are point-in-time server tests, not proof of ISP throttling.'
+    response='📊 DigitalServices VPN speed results (measured ON each VPN server)\n'+('\n'.join(lines) if lines else 'Server not found')+'\nThese are point-in-time server tests, not proof of ISP throttling.'
     notify(response)
   return {'ok':True}
  callback=payload.get('callback_query') or {}
