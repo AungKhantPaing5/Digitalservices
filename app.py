@@ -291,34 +291,28 @@ def backup_cipher(passphrase,salt):
 @app.post('/admin/config/backup')
 @admin_needed
 def config_backup():
- password=request.form.get('backup_password','')
  try:
-  salt=os.urandom(16)
   with conn() as c:
    entries=[dict(row) for row in c.execute('SELECT id,name,url,token,inbound,host,public_key,sni,short_id,flow,enabled,subscription_base FROM servers ORDER BY id')]
-  # Tokens are stored encrypted with SECRET_KEY; export decrypts before password-encrypting
-  # so a restore remains portable if the app SECRET_KEY changes.
   for x in entries:x['token']=crypto.decrypt(x['token'].encode()).decode()
-  package=json.dumps({'format':'digitalservices-server-config-v1','created':now(),'servers':entries},ensure_ascii=False).encode()
-  ciphertext=backup_cipher(password,salt).encrypt(package)
-  blob=b'DSCFG1'+salt+ciphertext
+  package=json.dumps({'format':'digitalservices-server-config-v2','created':now(),'servers':entries},ensure_ascii=False).encode()
+  blob=b'DSCFG2'+crypto.encrypt(package)
   notify('Admin exported encrypted server settings backup.')
   return flask_send_file(io.BytesIO(blob),as_attachment=True,download_name='digitalservices-server-config.enc',mimetype='application/octet-stream')
  except (ValueError,InvalidToken):
-  flash('Backup password must be at least 12 characters.','bad');return redirect('/admin')
+  flash('Backup failed: server credentials could not be encrypted.','bad');return redirect('/admin')
 
 @app.post('/admin/config/restore')
 @admin_needed
 def config_restore():
- password=request.form.get('backup_password','')
  uploaded=request.files.get('backup_file')
  if request.form.get('confirm')!='RESTORE_SERVER_CONFIG' or not uploaded:abort(400)
  raw=uploaded.read(1024*1024+1)
- if len(raw)>1024*1024 or not raw.startswith(b'DSCFG1'):
+ if len(raw)>1024*1024 or not raw.startswith(b'DSCFG2'):
   flash('Invalid or oversized configuration backup.','bad');return redirect('/admin')
  try:
-  payload=json.loads(backup_cipher(password,raw[6:22]).decrypt(raw[22:]))
-  if payload.get('format')!='digitalservices-server-config-v1':raise ValueError('Unsupported backup version')
+  payload=json.loads(crypto.decrypt(raw[6:]))
+  if payload.get('format')!='digitalservices-server-config-v2':raise ValueError('Unsupported backup version')
   servers=payload['servers']
   if not isinstance(servers,list) or len(servers)>100:raise ValueError('Invalid server count')
   validated=[]
@@ -333,7 +327,7 @@ def config_restore():
   flash(f'Restored {len(validated)} server configurations; customer data unchanged.','ok')
   notify('Admin restored server configuration backup. Confirm 3x-ui connectivity.')
  except (ValueError,TypeError,KeyError,InvalidToken,sqlite3.Error,UnicodeDecodeError):
-  flash('Restore failed: wrong password, invalid file, or conflicting server names. No partial restore committed.','bad')
+  flash('Restore failed: invalid file, different SECRET_KEY, or conflicting server names. No partial restore committed.','bad')
  return redirect('/admin')
 
 @app.post('/admin/import/<int:sid>')
