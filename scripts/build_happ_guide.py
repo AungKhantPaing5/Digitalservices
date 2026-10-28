@@ -61,6 +61,12 @@ with concat.open('w') as f:
  for p in frames:f.write(f"file '{p.name}'\nduration 5\n")
  f.write(f"file '{frames[-1].name}'\n")
 subprocess.run(['ffmpeg','-hide_banner','-loglevel','error','-y','-f','concat','-safe','0','-i',str(concat),'-vf','fps=15,format=yuv420p','-c:v','libx264','-preset','veryfast','-crf','27','-movflags','+faststart',str(ROOT/'happ-guide.mp4')],cwd=ROOT,check=True)
+# Optional human-recorded Myanmar narration. Keep the raw audio private.
+voice=Path(__file__).resolve().parent.parent/'media'/'happ-voiceover.mp3'
+if voice.is_file():
+ outfile=ROOT/'happ-guide-with-voice.mp4'
+ subprocess.run(['ffmpeg','-hide_banner','-loglevel','error','-y','-i',str(ROOT/'happ-guide.mp4'),'-i',str(voice),'-map','0:v:0','-map','1:a:0','-c:v','copy','-c:a','aac','-b:a','128k','-af','apad','-shortest','-movflags','+faststart',str(outfile)],check=True)
+ outfile.replace(ROOT/'happ-guide.mp4')
 for p in frames:p.unlink()
 concat.unlink()
 print('Generated 16:9 detailed Happ tutorial video')
