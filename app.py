@@ -1,14 +1,14 @@
-import os,sqlite3,json,uuid,secrets,time,calendar,logging,re,hashlib,html
+import os,sqlite3,json,uuid,secrets,time,calendar,logging,re,hashlib,html,io
 from datetime import datetime,timezone,timedelta
 from zoneinfo import ZoneInfo
 from functools import wraps
 from urllib.parse import quote,urlencode
 import requests
-from flask import Flask,request,render_template,redirect,url_for,session,flash,abort,send_file
+from flask import Flask,request,render_template,redirect,url_for,session,flash,abort,send_file,send_file as flask_send_file
 from werkzeug.security import generate_password_hash,check_password_hash
 from PIL import Image,UnidentifiedImageError
-from cryptography.fernet import Fernet
-from base64 import urlsafe_b64encode
+from cryptography.fernet import Fernet,InvalidToken
+from base64 import urlsafe_b64encode,urlsafe_b64decode
 
 DATA=os.getenv('DATA_DIR','/app/data');os.makedirs(DATA,exist_ok=True);os.makedirs(DATA+'/proofs',exist_ok=True)
 DB=DATA+'/app.sqlite3'; app=Flask(__name__);app.secret_key=os.getenv('SECRET_KEY','CHANGE_ME');app.config.update(MAX_CONTENT_LENGTH=5*1024*1024,SESSION_COOKIE_HTTPONLY=True,SESSION_COOKIE_SAMESITE='Lax',SESSION_COOKIE_SECURE=os.getenv('COOKIE_SECURE','1')=='1')
@@ -241,6 +241,83 @@ def set_subscription(sid):
  if not re.fullmatch(r'https://[^\s?#]+',value):flash('Valid HTTPS subscription base URL required','bad');return redirect('/admin')
  with conn() as c:c.execute('UPDATE servers SET subscription_base=? WHERE id=?',(value,sid))
  flash('Subscription base URL saved. Test it against your actual 3x-ui subscription service.','ok')
+ return redirect('/admin')
+
+@app.post('/admin/servers/<int:sid>/edit')
+@admin_needed
+def edit_server(sid):
+ with conn() as c:
+  old=c.execute('SELECT * FROM servers WHERE id=?',(sid,)).fetchone()
+  if not old:abort(404)
+  name=request.form.get('name','').strip()
+  url=request.form.get('url','').strip().rstrip('/')
+  host=request.form.get('host','').strip()
+  base=request.form.get('subscription_base','').strip()
+  inbound=request.form.get('inbound',type=int)
+  token=request.form.get('token','').strip()
+  if not name or not re.fullmatch(r'https://[^\\s?#]+',url) or not host or not inbound or inbound<1 or (base and not re.fullmatch(r'https://[^\\s?#]+',base)):
+   flash('Invalid server config: HTTPS URL, name, inbound and hostname required.','bad');return redirect('/admin')
+  # Do not rewrite client credentials or migrate clients when changing a server record.
+  encrypted=crypto.encrypt(token.encode()).decode() if token else old['token']
+  try:
+   with conn() as c:c.execute('UPDATE servers SET name=?,url=?,token=?,inbound=?,host=?,public_key=?,sni=?,short_id=?,flow=?,subscription_base=?,enabled=? WHERE id=?',
+    (name,url,encrypted,inbound,host,request.form.get('public_key','').strip(),request.form.get('sni','').strip(),request.form.get('short_id','').strip(),request.form.get('flow','xtls-rprx-vision').strip(),base,int(request.form.get('enabled')=='1'),sid))
+   flash('Server settings updated. Existing VPN clients were not changed.','ok')
+  except sqlite3.IntegrityError:flash('Server name already exists.','bad')
+ return redirect('/admin')
+
+def backup_cipher(passphrase,salt):
+ from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
+ if len(passphrase)<12:raise ValueError('Backup password must have at least 12 characters.')
+ key=Scrypt(salt=salt,length=32,n=2**14,r=8,p=1).derive(passphrase.encode())
+ return Fernet(urlsafe_b64encode(key))
+
+@app.post('/admin/config/backup')
+@admin_needed
+def config_backup():
+ password=request.form.get('backup_password','')
+ try:
+  salt=os.urandom(16)
+  with conn() as c:
+   entries=[dict(row) for row in c.execute('SELECT id,name,url,token,inbound,host,public_key,sni,short_id,flow,enabled,subscription_base FROM servers ORDER BY id')]
+  # Tokens are stored encrypted with SECRET_KEY; export decrypts before password-encrypting
+  # so a restore remains portable if the app SECRET_KEY changes.
+  for x in entries:x['token']=crypto.decrypt(x['token'].encode()).decode()
+  package=json.dumps({'format':'digitalservices-server-config-v1','created':now(),'servers':entries},ensure_ascii=False).encode()
+  ciphertext=backup_cipher(password,salt).encrypt(package)
+  blob=b'DSCFG1'+salt+ciphertext
+  notify('Admin exported encrypted server settings backup.')
+  return flask_send_file(io.BytesIO(blob),as_attachment=True,download_name='digitalservices-server-config.enc',mimetype='application/octet-stream')
+ except (ValueError,InvalidToken):
+  flash('Backup password must be at least 12 characters.','bad');return redirect('/admin')
+
+@app.post('/admin/config/restore')
+@admin_needed
+def config_restore():
+ password=request.form.get('backup_password','')
+ uploaded=request.files.get('backup_file')
+ if request.form.get('confirm')!='RESTORE_SERVER_CONFIG' or not uploaded:abort(400)
+ raw=uploaded.read(1024*1024+1)
+ if len(raw)>1024*1024 or not raw.startswith(b'DSCFG1'):
+  flash('Invalid or oversized configuration backup.','bad');return redirect('/admin')
+ try:
+  payload=json.loads(backup_cipher(password,raw[6:22]).decrypt(raw[22:]))
+  if payload.get('format')!='digitalservices-server-config-v1':raise ValueError('Unsupported backup version')
+  servers=payload['servers']
+  if not isinstance(servers,list) or len(servers)>100:raise ValueError('Invalid server count')
+  validated=[]
+  for o in servers:
+   if not isinstance(o,dict) or not isinstance(o.get('id'),int) or not o.get('name') or not re.fullmatch(r'https://[^\\s?#]+',o.get('url','')) or not o.get('token') or not o.get('host') or int(o.get('inbound',0))<1:raise ValueError('Invalid server record')
+   validated.append((o['id'],o['name'],o['url'],crypto.encrypt(o['token'].encode()).decode(),int(o['inbound']),o['host'],o.get('public_key',''),o.get('sni',''),o.get('short_id',''),o.get('flow','xtls-rprx-vision'),int(bool(o.get('enabled'))),o.get('subscription_base','')))
+  with conn() as c:
+   c.execute('BEGIN IMMEDIATE')
+   for o in validated:
+    # Restore by original server ID to preserve linked customer orders and clients.
+    c.execute('INSERT INTO servers(id,name,url,token,inbound,host,public_key,sni,short_id,flow,enabled,subscription_base) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,url=excluded.url,token=excluded.token,inbound=excluded.inbound,host=excluded.host,public_key=excluded.public_key,sni=excluded.sni,short_id=excluded.short_id,flow=excluded.flow,enabled=excluded.enabled,subscription_base=excluded.subscription_base',o)
+  flash(f'Restored {len(validated)} server configurations; customer data unchanged.','ok')
+  notify('Admin restored server configuration backup. Confirm 3x-ui connectivity.')
+ except (ValueError,TypeError,KeyError,InvalidToken,sqlite3.Error,UnicodeDecodeError):
+  flash('Restore failed: wrong password, invalid file, or conflicting server names. No partial restore committed.','bad')
  return redirect('/admin')
 
 @app.post('/admin/import/<int:sid>')
