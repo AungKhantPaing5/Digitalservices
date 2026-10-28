@@ -247,6 +247,33 @@ def set_subscription(sid):
  flash('Subscription base URL saved. Test it against your actual 3x-ui subscription service.','ok')
  return redirect('/admin')
 
+@app.post('/admin/orders/<int:oid>/delete')
+@admin_needed
+def delete_order_permanently(oid):
+ if request.form.get('confirm')!='DELETE '+str(oid):abort(400)
+ with conn() as c:
+  c.execute('BEGIN IMMEDIATE')
+  order=c.execute('SELECT id,status,proof,client_id FROM orders WHERE id=?',(oid,)).fetchone()
+  if not order:abort(404)
+  # Never erase a financial transaction that activated a client or scheduled a renewal.
+  if order['status'] not in ('rejected','manual_review') or order['client_id'] is not None:
+   flash('Active, scheduled and completed orders must remain archived for accounting and VPN safety.','bad')
+   return redirect('/admin#orders')
+  if c.execute('SELECT 1 FROM renewals WHERE order_id=?',(oid,)).fetchone():
+   flash('Cannot delete an order linked to a renewal.','bad')
+   return redirect('/admin#orders')
+  c.execute('UPDATE audit SET order_id=NULL WHERE order_id=?',(oid,))
+  c.execute('INSERT INTO audit(order_id,action,detail,at) VALUES(NULL,?,?,?)',('order_deleted','Order #'+str(oid)+' removed by admin',now()))
+  c.execute('DELETE FROM orders WHERE id=?',(oid,))
+ # Remove receipt after database commit; do not delete any customer VPN client.
+ proof=os.path.basename(order['proof'] or '')
+ if proof:
+  try:os.unlink(os.path.join(DATA,'proofs',proof))
+  except FileNotFoundError:pass
+  except OSError:app.logger.exception('Could not delete removed order proof')
+ flash('Order deleted permanently from website database. 3x-ui clients unchanged.','ok')
+ return redirect('/admin#orders')
+
 @app.post('/admin/orders/<int:oid>/archive')
 @admin_needed
 def archive_order(oid):
