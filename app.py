@@ -199,7 +199,7 @@ def admin():
 @admin_needed
 def proof(id):
  with conn() as c:o=c.execute('SELECT proof FROM orders WHERE id=?',(id,)).fetchone()
- if not o:abort(404)
+ if not o or not o['proof'] or not os.path.isfile(DATA+'/proofs/'+o['proof']):abort(404)
  return send_file(DATA+'/proofs/'+o['proof'],mimetype='image/jpeg')
 @app.post('/admin/servers')
 @admin_needed
@@ -346,7 +346,7 @@ def chat_messages():
  with conn() as c:
   if user['admin'] and not c.execute('SELECT 1 FROM users WHERE id=? AND admin=0',(target,)).fetchone():abort(404)
   rows=c.execute('SELECT id,sender_admin,body,created FROM chat_messages WHERE user_id=? ORDER BY id DESC LIMIT 100',(target,)).fetchall()
- return {'messages':[{'id':r['id'],'sender':'Admin' if r['sender_admin'] else 'Customer','mine':bool(r['sender_admin']) if user['admin'] else not bool(r['sender_admin']),'body':r['body'],'created':datetime.fromtimestamp(r['created']/1000,timezone.utc).strftime('%Y-%m-%d %H:%M UTC')} for r in reversed(rows)]}
+ return {'messages':[{'id':r['id'],'sender':'Admin' if r['sender_admin'] else 'Customer','mine':bool(r['sender_admin']) if user['admin'] else not bool(r['sender_admin']),'body':r['body'],'created':datetime.fromtimestamp(r['created']/1000,MMT).strftime('%d %b %Y %I:%M %p (Myanmar)')} for r in reversed(rows)]}
 
 @app.post('/chat/send')
 @login_needed
