@@ -42,6 +42,8 @@ def init():
   c.execute('CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY,order_id INTEGER,action TEXT NOT NULL,detail TEXT DEFAULT "",at INTEGER NOT NULL)')
   c.execute('CREATE TABLE IF NOT EXISTS chat_messages (id INTEGER PRIMARY KEY,user_id INTEGER NOT NULL REFERENCES users(id),sender_admin INTEGER NOT NULL DEFAULT 0,body TEXT NOT NULL,created INTEGER NOT NULL)')
   c.execute('CREATE INDEX IF NOT EXISTS idx_chat_user_created ON chat_messages(user_id,id)')
+  c.execute('CREATE TABLE IF NOT EXISTS speed_results (id INTEGER PRIMARY KEY, server_id INTEGER NOT NULL REFERENCES servers(id), measured INTEGER NOT NULL, download_mbps REAL, upload_mbps REAL, ping_ms REAL, error TEXT DEFAULT "")')
+  c.execute('CREATE INDEX IF NOT EXISTS idx_speed_server_date ON speed_results(server_id,measured DESC)')
   if not any(x[1]=='subscription_base' for x in c.execute('PRAGMA table_info(servers)')): c.execute('ALTER TABLE servers ADD COLUMN subscription_base TEXT DEFAULT ""')
   email=os.getenv('ADMIN_EMAIL','').strip().lower();pwd=os.getenv('ADMIN_PASSWORD','')
   if email and len(pwd)>=6 and not c.execute('SELECT 1 FROM users WHERE admin=1').fetchone():c.execute('INSERT INTO users(email,password,admin) VALUES(?,?,1)',(email,generate_password_hash(pwd)))
@@ -295,6 +297,38 @@ def decide(oid,action):
   with conn() as c:c.execute('UPDATE orders SET status="manual_review",activation_error=? WHERE id=?',(str(e)[:250],oid))
   flash('Manual review required: no automatic retry (prevents double provisioning).','bad')
  return redirect('/admin')
+
+@app.post('/monitoring/report/<int:sid>')
+def speed_report(sid):
+ expected=os.getenv('SPEED_AGENT_SECRET','')
+ supplied=request.headers.get('X-DigitalServices-Agent','')
+ if len(expected)<32 or not secrets.compare_digest(supplied,expected):abort(403)
+ if request.content_length and request.content_length>2048:abort(413)
+ obj=request.get_json(silent=True) or {}
+ if not server(sid):abort(404)
+ try:
+  down=float(obj['download_mbps']);up=float(obj['upload_mbps']);ping=float(obj['ping_ms'])
+  if not (0<=down<=100000 and 0<=up<=100000 and 0<=ping<=60000):raise ValueError()
+ except (KeyError,TypeError,ValueError):abort(400)
+ with conn() as c:
+  c.execute('INSERT INTO speed_results(server_id,measured,download_mbps,upload_mbps,ping_ms) VALUES(?,?,?,?,?)',(sid,now(),down,up,ping))
+  # Keep 100 latest records per server for bounded storage
+  c.execute('DELETE FROM speed_results WHERE server_id=? AND id NOT IN (SELECT id FROM speed_results WHERE server_id=? ORDER BY measured DESC LIMIT 100)',(sid,sid))
+ return {'ok':True}
+
+def monitoring_summary(name=None):
+ with conn() as c:
+  rows=c.execute('SELECT id,name FROM servers WHERE enabled=1 ORDER BY name').fetchall()
+  if name:rows=[r for r in rows if r['name'].casefold()==name.casefold()]
+  report=[]
+  for srv in rows:
+   latest=c.execute('SELECT * FROM speed_results WHERE server_id=? ORDER BY measured DESC LIMIT 1',(srv['id'],)).fetchone()
+   if not latest:report.append(f"{srv['name']}: No speed test data (install agent on this VPN VPS).");continue
+   age=int((now()-latest['measured'])/60000)
+   when=myanmar_date(latest['measured'])
+   report.append(f"{srv['name']} | ↓{latest['download_mbps']:.1f} Mbps ↑{latest['upload_mbps']:.1f} Mbps | Ping {latest['ping_ms']:.1f} ms | {when} | {age} min old")
+ return report
+
 @app.post('/telegram/webhook')
 def telegram_webhook():
  token=os.getenv('TELEGRAM_BOT_TOKEN','')
@@ -305,6 +339,17 @@ def telegram_webhook():
  supplied=request.headers.get('X-Telegram-Bot-Api-Secret-Token','')
  if not secrets.compare_digest(supplied,secret):abort(403)
  payload=request.get_json(silent=True) or {}
+ message=payload.get('message') or {}
+ if message:
+  sender=message.get('from') or {};chatmsg=message.get('chat') or {}
+  if str(sender.get('id'))==str(admin_id) and str(chatmsg.get('id'))==str(chat_id):
+   cmd=(message.get('text') or '').strip().split()
+   if cmd and cmd[0].split('@')[0].lower() in ('/speedtest','/servers'):
+    requested=cmd[1] if len(cmd)>1 else None
+    lines=monitoring_summary(requested)
+    response='📊 DigitalServices VPN speed results (measured ON each VPN server)\\n'+('\\n'.join(lines) if lines else 'Server not found')+'\\nThese are point-in-time server tests, not proof of ISP throttling.'
+    notify(response)
+  return {'ok':True}
  callback=payload.get('callback_query') or {}
  sender=callback.get('from') or {}
  msg=callback.get('message') or {}
