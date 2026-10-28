@@ -256,14 +256,14 @@ def delete_order_permanently(oid):
   order=c.execute('SELECT id,status,proof,client_id FROM orders WHERE id=?',(oid,)).fetchone()
   if not order:abort(404)
   # Never erase a financial transaction that activated a client or scheduled a renewal.
-  if order['status'] not in ('rejected','manual_review') or order['client_id'] is not None:
-   flash('Active, scheduled and completed orders must remain archived for accounting and VPN safety.','bad')
+  if order['status'] not in ('rejected','manual_review','active'):
+   flash('Pending, processing, and scheduled orders cannot be permanently deleted. Resolve or archive them first.','bad')
    return redirect('/admin#orders')
   if c.execute('SELECT 1 FROM renewals WHERE order_id=?',(oid,)).fetchone():
    flash('Cannot delete an order linked to a renewal.','bad')
    return redirect('/admin#orders')
   c.execute('UPDATE audit SET order_id=NULL WHERE order_id=?',(oid,))
-  c.execute('INSERT INTO audit(order_id,action,detail,at) VALUES(NULL,?,?,?)',('order_deleted','Order #'+str(oid)+' removed by admin',now()))
+  c.execute('INSERT INTO audit(order_id,action,detail,at) VALUES(NULL,?,?,?)',('order_deleted','Order #'+str(oid)+' permanently removed by admin (VPN clients unchanged)',now()))
   c.execute('DELETE FROM orders WHERE id=?',(oid,))
  # Remove receipt after database commit; do not delete any customer VPN client.
  proof=os.path.basename(order['proof'] or '')
