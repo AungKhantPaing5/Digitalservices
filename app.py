@@ -172,23 +172,44 @@ def dashboard():
  return render_template('dashboard.html',orders=orders,owned=owned)
 @app.route('/buy/<plan>',methods=['GET','POST'])
 @login_needed
+def choose_order_server(kind, username, uid):
+ with conn() as c:
+  if kind=='existing':
+   matches=c.execute("SELECT cl.server_id,cl.owner FROM clients cl JOIN servers s ON s.id=cl.server_id WHERE s.enabled=1 AND (cl.username=? COLLATE NOCASE OR cl.xui_email=? COLLATE NOCASE)",(username,username)).fetchall()
+   if len(matches)!=1:raise ValueError('Existing username not uniquely found. Contact Admin to confirm the original server before paying.')
+   if matches[0]['owner'] and matches[0]['owner']!=uid:raise ValueError('VPN belongs to another customer. Contact Admin.')
+   return matches[0]['server_id']
+  choices=[]
+  for srv in c.execute("SELECT * FROM servers WHERE enabled=1 AND subscription_base LIKE 'https://%' ORDER BY id").fetchall():
+   try:
+    inbound=api(srv,'GET',f'/panel/api/inbounds/get/{srv["inbound"]}')
+    live=len(extra(inbound.get('settings')).get('clients',[]))
+    pending=c.execute("SELECT COUNT(*) n FROM orders WHERE server_id=? AND kind='new' AND status IN ('pending','processing')",(srv['id'],)).fetchone()['n']
+    choices.append((live+pending,srv['id']))
+   except (requests.RequestException,RuntimeError,ValueError,TypeError,AttributeError):
+    app.logger.exception('Server count unavailable: %s',srv['name'])
+  if not choices:raise ValueError('No verified servers currently available. Contact Admin before payment.')
+  return min(choices,key=lambda pair:(pair[0]>=100,pair[0],pair[1]))[1]
+
 def buy(plan):
  if plan not in PLANS:abort(404)
- with conn() as c:servers=c.execute('SELECT id,name FROM servers WHERE enabled=1 ORDER BY id').fetchall()
+ 
  if request.method=='POST':
-  kind=request.form.get('kind');sid=request.form.get('server_id',type=int);username=normalize_username(request.form.get('username',''));method=request.form.get('method');upload=request.files.get('proof')
-  if not re.fullmatch(r'[A-Za-z0-9_.-]{3,64}',username) or kind not in ('new','existing') or not server(sid) or method not in PAYMENTS or (kind=='existing' and (not username or len(username)>150)) or not upload:
+  kind=request.form.get('kind');username=normalize_username(request.form.get('username',''));method=request.form.get('method');upload=request.files.get('proof')
+  if not re.fullmatch(r'[A-Za-z0-9_.-]{3,64}',username) or kind not in ('new','existing') or method not in PAYMENTS or (kind=='existing' and (not username or len(username)>150)) or not upload:
    flash('Check VPN type, server, username, and payment details','bad')
   else:
    try:
+    sid=choose_order_server(kind,username,identity()['id'])
     im=Image.open(upload.stream);im.verify();upload.stream.seek(0);im=Image.open(upload.stream)
     if im.format not in ('JPEG','PNG','WEBP'):raise ValueError('Unsupported image')
     filename=secrets.token_hex(24)+'.jpg';im.convert('RGB').save(DATA+'/proofs/'+filename,format='JPEG',quality=85)
     with conn() as c:oid=c.execute('INSERT INTO orders(user_id,plan,server_id,username,method,proof,created,kind) VALUES(?,?,?,?,?,?,?,?)',(identity()['id'],plan,sid,username,method,filename,now(),kind)).lastrowid
     notify_order(oid,DATA+'/proofs/'+filename,f'🧾 Order #{oid} | {kind.upper()} | Username: {username} | Plan: {plan} | Payment: {method}. Confirm actual bank receipt before approval.',kind)
     flash('Payment submitted. Admin will verify before activation.','ok');return redirect('/dashboard')
-   except (UnidentifiedImageError,ValueError,OSError):flash('Upload a valid JPG, PNG, or WEBP image under 5MB','bad')
- return render_template('buy.html',plan=plan,servers=servers)
+   except (UnidentifiedImageError,OSError):flash('Upload a valid JPG, PNG, or WEBP image under 5MB','bad')
+   except ValueError as e:flash(str(e),'bad')
+ return render_template('buy.html',plan=plan)
 @app.get('/admin')
 @admin_needed
 def admin():
