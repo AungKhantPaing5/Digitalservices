@@ -271,7 +271,7 @@ def edit_server(sid):
   base=request.form.get('subscription_base','').strip()
   inbound=request.form.get('inbound',type=int)
   token=request.form.get('token','').strip()
-  if not name or not re.fullmatch(r'https://[^\\s?#]+',url) or not host or not inbound or inbound<1 or (base and not re.fullmatch(r'https://[^\\s?#]+',base)):
+  if not name or not re.fullmatch(r'https://[^\s?#]+',url) or not host or not inbound or inbound<1 or (base and not re.fullmatch(r'https://[^\s?#]+',base)):
    flash('Invalid server config: HTTPS URL, name, inbound and hostname required.','bad');return redirect('/admin')
   # Do not rewrite client credentials or migrate clients when changing a server record.
   encrypted=crypto.encrypt(token.encode()).decode() if token else old['token']
@@ -323,7 +323,7 @@ def config_restore():
   if not isinstance(servers,list) or len(servers)>100:raise ValueError('Invalid server count')
   validated=[]
   for o in servers:
-   if not isinstance(o,dict) or not isinstance(o.get('id'),int) or not o.get('name') or not re.fullmatch(r'https://[^\\s?#]+',o.get('url','')) or not o.get('token') or not o.get('host') or int(o.get('inbound',0))<1:raise ValueError('Invalid server record')
+   if not isinstance(o,dict) or not isinstance(o.get('id'),int) or not o.get('name') or not re.fullmatch(r'https://[^\s?#]+',o.get('url','')) or not o.get('token') or not o.get('host') or int(o.get('inbound',0))<1:raise ValueError('Invalid server record')
    validated.append((o['id'],o['name'],o['url'],crypto.encrypt(o['token'].encode()).decode(),int(o['inbound']),o['host'],o.get('public_key',''),o.get('sni',''),o.get('short_id',''),o.get('flow','xtls-rprx-vision'),int(bool(o.get('enabled'))),o.get('subscription_base','')))
   with conn() as c:
    c.execute('BEGIN IMMEDIATE')
