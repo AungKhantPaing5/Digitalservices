@@ -170,8 +170,6 @@ def dashboard():
   orders=c.execute('SELECT o.*,s.name AS server_name FROM orders o JOIN servers s ON s.id=o.server_id WHERE o.user_id=? ORDER BY o.id DESC',(identity()['id'],)).fetchall()
   owned=c.execute('SELECT cl.*,s.name AS server_name FROM clients cl JOIN servers s ON s.id=cl.server_id WHERE owner=? ORDER BY cl.id DESC',(identity()['id'],)).fetchall()
  return render_template('dashboard.html',orders=orders,owned=owned)
-@app.route('/buy/<plan>',methods=['GET','POST'])
-@login_needed
 def choose_order_server(kind, username, uid):
  with conn() as c:
   if kind=='existing':
@@ -191,6 +189,8 @@ def choose_order_server(kind, username, uid):
   if not choices:raise ValueError('No verified servers currently available. Contact Admin before payment.')
   return min(choices,key=lambda pair:(pair[0]>=100,pair[0],pair[1]))[1]
 
+@app.route('/buy/<plan>',methods=['GET','POST'])
+@login_needed
 def buy(plan):
  if plan not in PLANS:abort(404)
  
