@@ -23,7 +23,7 @@ try:
   if not match:raise ValueError('Invalid speedtest latency; independent ICMP ping failed. No data submitted.')
   ping_ms=float(match.group(1))
  payload={'download_mbps':round(float(data['download'])*8/1e6,2),'upload_mbps':round(float(data['upload'])*8/1e6,2),'ping_ms':round(ping_ms,2)}
- req=urllib.request.Request(f'{base}/monitoring/report/{sid}',json.dumps(payload).encode(),headers={'Content-Type':'application/json','X-DigitalServices-Agent':secret},method='POST')
+ req=urllib.request.Request(f'{base}/monitoring/report/{sid}',json.dumps(payload).encode(),headers={'Content-Type':'application/json','User-Agent':'DigitalServices-SpeedAgent/1.0 (+server-monitoring)','X-DigitalServices-Agent':secret},method='POST')
  with urllib.request.urlopen(req,timeout=20) as res:
   print('Reported:',res.status,'download Mbps:',payload['download_mbps'],'upload Mbps:',payload['upload_mbps'],'ping ms:',payload['ping_ms'])
 except Exception as exc:
