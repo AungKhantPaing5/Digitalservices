@@ -119,3 +119,35 @@ docker compose start web scheduler
 The tarball contains **payment receipts, password hashes, customer details and credential secrets**. Restrict it to root, encrypt it before moving off-host and never upload it to public repositories or group chats. To restore, stop web/scheduler, back up the current files first, restore the saved `.env` and `data/` from the archive using a secure offline procedure, then restart the services and verify site health. Do **not** casually restore stale snapshots: recent orders and client links could diverge from 3x-ui. Always reconcile 3x-ui actual state.
 
 Changing provider or endpoint during throttling: a new empty 3x-ui server is **not** an automatic replacement for an old server. Subscription client IDs, REALITY and existing links must be migrated/maintained explicitly. Disabling the old server for new sales is safer than overwriting its settings until migration is validated.
+
+## api3 hosting: server edit, password reset, full encrypted backup/restore
+
+The DigitalServices application may run on the same VPS as api3 3x-ui. They are distinct installations: app configuration backup does **not** back up 3x-ui clients, certificates, or Xray configuration. Before migration back up both installations independently.
+
+**Admin panel**
+- Edit Server Configuration: change URL, inbound, token (optional), host, REALITY settings, subscription URL; disable server for new orders without deleting client references.
+- Encrypted Server Configuration Backup / Restore: only application server-connection registry, not database/orders/customers.
+- Customer Password Reset: select customer by email and set a new 12–128 character password; saved as a salted password hash and reset action logged. Does not change VPN keys. Arrange private delivery to customer.
+
+**Complete site backup (host CLI, encrypted):** first put the site into a maintenance window and stop web/scheduler so SQLite and filesystem snapshots agree. Execute from the DigitalServices directory:
+```bash
+cd ~/Digitalservices
+docker compose stop web scheduler
+python3 -m pip show cryptography >/dev/null || echo 'Install python3-cryptography for the HOST Python environment'
+python3 scripts/full_backup.py backup "/root/digitalservices-$(date +%Y%m%d-%H%M).enc"
+docker compose start web scheduler
+```
+This encrypted backup includes `.env`, `data/app.sqlite3`, payment images and chat history. Store backup password separately. Never put the backup in public GitHub. Store an off-site copy after encrypting.
+
+**Restore:** back up existing state first, then **stop** web and scheduler:
+```bash
+cd ~/Digitalservices
+docker compose stop web scheduler
+python3 scripts/full_backup.py restore /root/path-to-backup.enc
+docker compose start web scheduler
+```
+The script validates the archive and requires the operator to type RESTORE. It overwrites application files; restore is not safe while web/scheduler are running. Verify customer orders and 3x-ui client state afterward. The current restore process runs on the host, not through browser upload, to avoid mutating the live SQLite database.
+
+For Ubuntu, if host Python lacks cryptography: `sudo apt install python3-cryptography`. Ensure system disk has room for a complete backup.
+
+**Do not mistake a server connection edit for VPN client migration.** Existing customers must be migrated or the existing subscription endpoint and client IDs retained. A disabled server can still have old customers.
