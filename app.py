@@ -1,4 +1,4 @@
-import os,sqlite3,json,uuid,secrets,time,calendar,logging,re,hashlib
+import os,sqlite3,json,uuid,secrets,time,calendar,logging,re,hashlib,html
 from datetime import datetime,timezone,timedelta
 from zoneinfo import ZoneInfo
 from functools import wraps
@@ -316,18 +316,43 @@ def speed_report(sid):
   c.execute('DELETE FROM speed_results WHERE server_id=? AND id NOT IN (SELECT id FROM speed_results WHERE server_id=? ORDER BY measured DESC LIMIT 100)',(sid,sid))
  return {'ok':True}
 
-def monitoring_summary(name=None):
+def speed_report_card(name=None):
  with conn() as c:
-  rows=c.execute('SELECT id,name FROM servers WHERE enabled=1 ORDER BY name').fetchall()
-  if name:rows=[r for r in rows if r['name'].casefold()==name.casefold()]
-  report=[]
-  for srv in rows:
-   latest=c.execute('SELECT * FROM speed_results WHERE server_id=? ORDER BY measured DESC LIMIT 1',(srv['id'],)).fetchone()
-   if not latest:report.append(f"{srv['name']}: No speed test data (install agent on this VPN VPS).");continue
-   age=int((now()-latest['measured'])/60000)
-   when=myanmar_date(latest['measured'])
-   report.append(f"{srv['name']} | ↓{latest['download_mbps']:.1f} Mbps ↑{latest['upload_mbps']:.1f} Mbps | Ping {latest['ping_ms']:.1f} ms | {when} | {age} min old")
- return report
+  servers=c.execute('SELECT id,name FROM servers WHERE enabled=1 ORDER BY name').fetchall()
+  chosen=[srv for srv in servers if not name or srv['name'].casefold()==name.casefold()]
+  lines=['📊 <b>DigitalServices | VPN Monitoring</b>','━━━━━━━━━━━━━━━━━━']
+  if not chosen:lines.append('⚠️ Server not found.')
+  for srv in chosen:
+   data=c.execute('SELECT * FROM speed_results WHERE server_id=? ORDER BY measured DESC LIMIT 1',(srv['id'],)).fetchone()
+   lines.append('🖥 <b>'+html.escape(srv['name'])+'</b>')
+   if not data:
+    lines.extend(['⚪ <b>No measurements yet</b>','Run the monitoring agent on this VPS.'])
+   else:
+    age=max(0,(now()-data['measured'])//60000)
+    status='🟢 Recent result' if age<=60 else '🟠 Old result'
+    lines.extend([status,'⬇️ <b>Download</b>  <code>'+f"{data['download_mbps']:,.1f}"+' Mbps</code>',
+      '⬆️ <b>Upload</b>       <code>'+f"{data['upload_mbps']:,.1f}"+' Mbps</code>',
+      '📶 <b>Ping</b>          <code>'+f"{data['ping_ms']:,.1f}"+' ms</code>',
+      '🕒 '+html.escape(myanmar_date(data['measured'])),
+      '⏳ '+str(age)+' minutes ago'])
+   lines.append('━━━━━━━━━━━━━━━━━━')
+  lines.append('ℹ️ VPS speed only. This does not prove ISP throttling.')
+  buttons=[[{'text':'🔄 Refresh results','callback_data':'ds:speed:'+('all' if not name else str(chosen[0]['id']) if chosen else 'all')}]]
+  if servers:
+   buttons.append([{'text':'📍 '+srv['name'][:20],'callback_data':'ds:speed:'+str(srv['id'])} for srv in servers[:3]])
+   if len(servers)>1:buttons.append([{'text':'🌐 All servers','callback_data':'ds:speed:all'}])
+ return '\n'.join(lines),{'inline_keyboard':buttons}
+
+def send_speed_report(name=None,chat_id=None,edit_id=None):
+ message,keyboard=speed_report_card(name)
+ data={'chat_id':chat_id or os.getenv('TELEGRAM_CHAT_ID'),'text':message,'parse_mode':'HTML','reply_markup':keyboard}
+ if edit_id:data['message_id']=edit_id
+ method='editMessageText' if edit_id else 'sendMessage'
+ token=os.getenv('TELEGRAM_BOT_TOKEN')
+ try:
+  response=requests.post('https://api.telegram.org/bot'+token+'/'+method,json=data,timeout=10)
+  if not response.ok and 'message is not modified' not in response.text:response.raise_for_status()
+ except requests.RequestException:app.logger.exception('Could not send Telegram monitoring card')
 
 @app.post('/telegram/webhook')
 def telegram_webhook():
@@ -346,9 +371,7 @@ def telegram_webhook():
    cmd=(message.get('text') or '').strip().split()
    if cmd and cmd[0].split('@')[0].lower() in ('/speedtest','/servers'):
     requested=cmd[1] if len(cmd)>1 else None
-    lines=monitoring_summary(requested)
-    response='📊 DigitalServices VPN speed results (measured ON each VPN server)\n'+('\n'.join(lines) if lines else 'Server not found')+'\nThese are point-in-time server tests, not proof of ISP throttling.'
-    notify(response)
+    send_speed_report(requested)
   return {'ok':True}
  callback=payload.get('callback_query') or {}
  sender=callback.get('from') or {}
@@ -356,6 +379,16 @@ def telegram_webhook():
  chat=msg.get('chat') or {}
  if str(sender.get('id'))!=str(admin_id) or str(chat.get('id'))!=str(chat_id):abort(403)
  data=callback.get('data','')
+ if data.startswith('ds:speed:'):
+  value=data.removeprefix('ds:speed:')
+  with conn() as cx:
+   found=cx.execute('SELECT name FROM servers WHERE id=?',(int(value),)).fetchone() if value.isdecimal() else None
+  if value=='all' or found:
+   send_speed_report(found['name'] if found else None,chat.get('id'),msg.get('message_id'))
+  else:app.logger.warning('Unknown server monitoring selection')
+  try:requests.post(f'https://api.telegram.org/bot{token}/answerCallbackQuery',json={'callback_query_id':callback.get('id'),'text':'Monitoring report refreshed.'},timeout=8)
+  except requests.RequestException:app.logger.exception('Telegram callback acknowledgment failed')
+  return {'ok':True}
  match=re.fullmatch(r'ds:(confirm|approve|reject|cancel):(\d+)',data)
  if not match:return {'ok':True}
  action,oid=match.group(1),int(match.group(2))
