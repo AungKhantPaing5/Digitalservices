@@ -1,5 +1,6 @@
 import os,sqlite3,json,uuid,secrets,time,calendar,logging,re,hashlib
-from datetime import datetime,timezone
+from datetime import datetime,timezone,timedelta
+from zoneinfo import ZoneInfo
 from functools import wraps
 from urllib.parse import quote,urlencode
 import requests
@@ -15,7 +16,18 @@ PLANS={'monthly':dict(name='1 Month VPN',months=1,gb=100,devices=1,price=5000),'
 PAYMENTS={'KPay':os.getenv('KPAY_NUMBER','Not configured'),'Wave':os.getenv('WAVE_NUMBER','Not configured'),'AYA Pay':os.getenv('AYA_NUMBER','Not configured')}
 crypto=Fernet(urlsafe_b64encode(hashlib.sha256(os.getenv('SECRET_KEY','CHANGE_ME').encode()).digest()))
 
+MMT=ZoneInfo('Asia/Yangon')
 def now():return int(time.time()*1000)
+def myanmar_date(ms):
+ if not ms or int(ms)<=0:return 'No expiry'
+ return datetime.fromtimestamp(int(ms)/1000,MMT).strftime('%d %b %Y, %I:%M %p (Myanmar)')
+def first_expiry(ms,months):
+ # Billing rule: day 1 purchase -> next month day 1 at 12:00 Myanmar local time.
+ # Each first purchase expires at 12:00 on the same calendar day N months later.
+ local=datetime.fromtimestamp(ms/1000,MMT).replace(hour=12,minute=0,second=0,microsecond=0)
+ year=local.year+(local.month-1+months)//12;month=(local.month-1+months)%12+1
+ day=min(local.day,calendar.monthrange(year,month)[1])
+ return int(local.replace(year=year,month=month,day=day).timestamp()*1000)
 def conn():
  c=sqlite3.connect(DB,timeout=30);c.row_factory=sqlite3.Row;c.execute('PRAGMA busy_timeout=30000');c.execute('PRAGMA foreign_keys=ON');return c
 
@@ -38,7 +50,7 @@ def csrf():
  if 'csrf' not in session:session['csrf']=secrets.token_urlsafe(32)
  return session['csrf']
 app.jinja_env.globals['csrf_token']=csrf
-app.jinja_env.filters['expiry_date']=lambda ms: datetime.fromtimestamp(int(ms)/1000,timezone.utc).strftime('%d %b %Y') if ms and int(ms)>0 else 'No expiry'
+app.jinja_env.filters['expiry_date']=myanmar_date
 @app.before_request
 def check():
  if request.path=='/telegram/webhook':return
@@ -102,7 +114,7 @@ def client_details(s,c):
  if not match:raise RuntimeError('Client not found in actual 3x-ui inbound; manual review required')
  return inbound,dict(match)
 def plus_months(ms,months):
- d=datetime.fromtimestamp(ms/1000,timezone.utc);year=d.year+(d.month-1+months)//12;month=(d.month-1+months)%12+1
+ d=datetime.fromtimestamp(ms/1000,MMT);year=d.year+(d.month-1+months)//12;month=(d.month-1+months)%12+1
  day=min(d.day,calendar.monthrange(year,month)[1]);return int(d.replace(year=year,month=month,day=day).timestamp()*1000)
 def link(s,inbound,cid,label):
  if inbound.get('protocol')!='vless':raise RuntimeError('New client provisioning supports VLESS only')
@@ -252,7 +264,7 @@ def decide(oid,action):
    if details.get('email')!=cl['xui_email']:raise RuntimeError('3x-ui metadata mismatch')
    subscription=subscription_link(s,details.get('subId'))
    actual_expiry=int(details.get('expiryTime') or 0)
-   start=max(now(),actual_expiry);new_expiry=plus_months(start,plan['months'])
+   start=max(now(),actual_expiry);new_expiry=plus_months(start,plan['months']) if actual_expiry>now() else first_expiry(now(),plan['months'])
    if actual_expiry>now():
     details['expiryTime']=new_expiry
     api(s,'POST',f'/panel/api/clients/update/{quote(cl["xui_email"],safe="")}',details)
@@ -267,7 +279,7 @@ def decide(oid,action):
      c.execute('UPDATE orders SET status="active",client_id=?,expires=? WHERE id=?',(cl['id'],new_expiry,oid))
   else:
    inbound=api(s,'GET',f'/panel/api/inbounds/get/{s["inbound"]}')
-   cid=str(uuid.uuid4());email=f'ds_{oid}_{o["username"]}';expiry=plus_months(now(),plan['months'])
+   cid=str(uuid.uuid4());email=f'ds_{oid}_{o["username"]}';expiry=first_expiry(now(),plan['months'])
    sub_id=secrets.token_urlsafe(18)
    key=subscription_link(s,sub_id)
    item={'id':cid,'email':email,'subId':sub_id,'enable':True,'expiryTime':expiry,'totalGB':plan['gb']*1024**3,'limitIp':plan['devices'],'flow':s['flow']}
