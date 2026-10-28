@@ -448,6 +448,11 @@ def decide(oid,action):
      c.execute('UPDATE clients SET owner=?,expiry=?,quota=?,devices=?,vpn_key=?,status="linked" WHERE id=?',(o['user_id'],new_expiry,plan['gb']*1024**3,plan['devices'],subscription,cl['id']))
      c.execute('UPDATE orders SET status="active",client_id=?,expires=? WHERE id=?',(cl['id'],new_expiry,oid))
   else:
+   # Allocate at approval time, not only when the checkout was submitted.
+   # Existing/renewal orders always retain their original server.
+   chosen_id=choose_order_server('new',o['username'],o['user_id'])
+   s=server(chosen_id)
+   if not s:raise RuntimeError('Selected VPN server became unavailable')
    inbound=api(s,'GET',f'/panel/api/inbounds/get/{s["inbound"]}')
    cid=str(uuid.uuid4());email=f'ds_{oid}_{o["username"]}';expiry=first_expiry(now(),plan['months'])
    sub_id=secrets.token_urlsafe(18)
@@ -456,7 +461,7 @@ def decide(oid,action):
    api(s,'POST','/panel/api/clients/add',{'client':item,'inboundIds':[s['inbound']]})
    with conn() as c:
     clid=c.execute('INSERT INTO clients(server_id,xui_id,xui_email,username,inbound,expiry,quota,devices,owner,vpn_key,status) VALUES(?,?,?,?,?,?,?,?,?,?,?)',(s['id'],cid,email,email,s['inbound'],expiry,item['totalGB'],plan['devices'],o['user_id'],key,'linked')).lastrowid
-    c.execute('UPDATE orders SET status="active",client_id=?,expires=? WHERE id=?',(clid,expiry,oid))
+    c.execute('UPDATE orders SET status="active",server_id=?,client_id=?,expires=? WHERE id=?',(s['id'],clid,expiry,oid))
   with conn() as c:c.execute('INSERT INTO audit(order_id,action,at) VALUES(?,?,?)',(oid,'approved',now()))
   notify(f'DigitalServices order #{oid} approved ({o["kind"]})')
   flash('Approved. Check customer dashboard / scheduled queue.','ok')
