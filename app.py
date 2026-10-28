@@ -55,7 +55,7 @@ app.jinja_env.globals['csrf_token']=csrf
 app.jinja_env.filters['expiry_date']=myanmar_date
 @app.before_request
 def check():
- if request.path=='/telegram/webhook':return
+ if request.path=='/telegram/webhook' or (request.path.startswith('/monitoring/report/') and request.method=='POST'):return
  if request.method=='POST' and not secrets.compare_digest(request.form.get('_csrf',''),csrf()):abort(400)
 def identity():
  if not session.get('uid'):return None
