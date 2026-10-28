@@ -215,7 +215,7 @@ def buy(plan):
 def admin():
  with conn() as c:
   orders=c.execute('SELECT o.*,u.email,s.name AS server_name FROM orders o JOIN users u ON o.user_id=u.id JOIN servers s ON o.server_id=s.id ORDER BY o.id DESC LIMIT 300').fetchall()
-  servers=c.execute('SELECT id,name,url,inbound,host,enabled FROM servers ORDER BY id').fetchall()
+  servers=c.execute('SELECT id,name,url,inbound,host,public_key,sni,short_id,flow,subscription_base,enabled FROM servers ORDER BY id').fetchall()
   counts=c.execute('SELECT server_id,COUNT(*) n FROM clients GROUP BY server_id').fetchall()
  return render_template('admin.html',orders=orders,servers=servers,counts={x['server_id']:x['n'] for x in counts})
 @app.get('/admin/proof/<int:id>')
