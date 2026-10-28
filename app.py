@@ -45,6 +45,8 @@ def init():
   c.execute('CREATE INDEX IF NOT EXISTS idx_chat_user_created ON chat_messages(user_id,id)')
   c.execute('CREATE TABLE IF NOT EXISTS speed_results (id INTEGER PRIMARY KEY, server_id INTEGER NOT NULL REFERENCES servers(id), measured INTEGER NOT NULL, download_mbps REAL, upload_mbps REAL, ping_ms REAL, error TEXT DEFAULT "")')
   c.execute('CREATE INDEX IF NOT EXISTS idx_speed_server_date ON speed_results(server_id,measured DESC)')
+  if not any(x[1]=='archived' for x in c.execute('PRAGMA table_info(orders)')):c.execute('ALTER TABLE orders ADD COLUMN archived INTEGER NOT NULL DEFAULT 0')
+  if not any(x[1]=='disabled' for x in c.execute('PRAGMA table_info(users)')):c.execute('ALTER TABLE users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0')
   if not any(x[1]=='subscription_base' for x in c.execute('PRAGMA table_info(servers)')): c.execute('ALTER TABLE servers ADD COLUMN subscription_base TEXT DEFAULT ""')
   email=os.getenv('ADMIN_EMAIL','').strip().lower();pwd=os.getenv('ADMIN_PASSWORD','')
   if email and len(pwd)>=6 and not c.execute('SELECT 1 FROM users WHERE admin=1').fetchone():c.execute('INSERT INTO users(email,password,admin) VALUES(?,?,1)',(email,generate_password_hash(pwd)))
@@ -60,7 +62,7 @@ def check():
  if request.method=='POST' and not secrets.compare_digest(request.form.get('_csrf',''),csrf()):abort(400)
 def identity():
  if not session.get('uid'):return None
- with conn() as c:return c.execute('SELECT id,email,admin FROM users WHERE id=?',(session['uid'],)).fetchone()
+ with conn() as c:return c.execute('SELECT id,email,admin FROM users WHERE id=? AND disabled=0',(session['uid'],)).fetchone()
 @app.context_processor
 def common():return {'plans':PLANS,'payments':PAYMENTS,'me':identity()}
 def login_needed(f):
@@ -158,7 +160,7 @@ def register():
 def login():
  if request.method=='POST':
   with conn() as c:u=c.execute('SELECT * FROM users WHERE email=?',(request.form.get('email','').lower().strip(),)).fetchone()
-  if u and check_password_hash(u['password'],request.form.get('password','')):
+  if u and not u['disabled'] and check_password_hash(u['password'],request.form.get('password','')):
    session.clear();session['uid']=u['id'];return redirect('/admin' if u['admin'] else '/dashboard')
   time.sleep(.4);flash('Invalid credentials','bad')
  return render_template('auth.html',mode='login')
@@ -168,7 +170,7 @@ def logout():session.clear();return redirect('/')
 @login_needed
 def dashboard():
  with conn() as c:
-  orders=c.execute('SELECT o.*,s.name AS server_name FROM orders o JOIN servers s ON s.id=o.server_id WHERE o.user_id=? ORDER BY o.id DESC',(identity()['id'],)).fetchall()
+  orders=c.execute('SELECT o.*,s.name AS server_name FROM orders o JOIN servers s ON s.id=o.server_id WHERE o.user_id=? AND o.archived=0 ORDER BY o.id DESC',(identity()['id'],)).fetchall()
   owned=c.execute('SELECT cl.*,s.name AS server_name FROM clients cl JOIN servers s ON s.id=cl.server_id WHERE owner=? ORDER BY cl.id DESC',(identity()['id'],)).fetchall()
  return render_template('dashboard.html',orders=orders,owned=owned)
 def choose_order_server(kind, username, uid):
@@ -218,7 +220,7 @@ def admin():
   orders=c.execute('SELECT o.*,u.email,s.name AS server_name FROM orders o JOIN users u ON o.user_id=u.id JOIN servers s ON o.server_id=s.id ORDER BY o.id DESC LIMIT 300').fetchall()
   servers=c.execute('SELECT id,name,url,inbound,host,public_key,sni,short_id,flow,subscription_base,enabled FROM servers ORDER BY id').fetchall()
   counts=c.execute('SELECT server_id,COUNT(*) n FROM clients GROUP BY server_id').fetchall()
-  customers=c.execute('SELECT id,email FROM users WHERE admin=0 ORDER BY id DESC LIMIT 300').fetchall()
+  customers=c.execute('SELECT id,email FROM users WHERE admin=0 AND disabled=0 ORDER BY id DESC LIMIT 300').fetchall()
  return render_template('admin.html',orders=orders,servers=servers,counts={x['server_id']:x['n'] for x in counts},customers=customers)
 @app.get('/admin/proof/<int:id>')
 @admin_needed
@@ -244,6 +246,37 @@ def set_subscription(sid):
  with conn() as c:c.execute('UPDATE servers SET subscription_base=? WHERE id=?',(value,sid))
  flash('Subscription base URL saved. Test it against your actual 3x-ui subscription service.','ok')
  return redirect('/admin')
+
+@app.post('/admin/orders/<int:oid>/archive')
+@admin_needed
+def archive_order(oid):
+ if request.form.get('confirm')!=str(oid):abort(400)
+ with conn() as c:
+  row=c.execute('SELECT status FROM orders WHERE id=?',(oid,)).fetchone()
+  if not row:abort(404)
+  if row['status'] in ('pending','processing','manual_review'):
+   flash('Resolve pending, processing, and manual-review orders before archiving.','bad')
+   return redirect('/admin#orders')
+  c.execute('UPDATE orders SET archived=1 WHERE id=?',(oid,))
+  c.execute('INSERT INTO audit(order_id,action,detail,at) VALUES(?,?,?,?)',(oid,'order_archived','Hidden from active order lists',now()))
+ flash('Transaction archived. Financial record and VPN link remain intact.','ok')
+ return redirect('/admin#orders')
+
+@app.post('/admin/customers/<int:uid>/delete')
+@admin_needed
+def delete_customer(uid):
+ if request.form.get('confirm')!='DELETE':abort(400)
+ with conn() as c:
+  customer=c.execute('SELECT id FROM users WHERE id=? AND admin=0 AND disabled=0',(uid,)).fetchone()
+  if not customer:abort(404)
+  unresolved=c.execute("SELECT COUNT(*) n FROM orders WHERE user_id=? AND status IN ('pending','processing','manual_review')",(uid,)).fetchone()['n']
+  if unresolved:
+   flash('Resolve customer pending/manual review orders first.','bad')
+   return redirect('/admin#customers')
+  c.execute('UPDATE users SET disabled=1,password=? WHERE id=?',(generate_password_hash(secrets.token_urlsafe(48)),uid))
+  c.execute('INSERT INTO audit(order_id,action,detail,at) VALUES(?,?,?,?)',(None,'customer_disabled','user id '+str(uid),now()))
+ flash('Customer login disabled; existing VPN clients on 3x-ui unchanged.','ok')
+ return redirect('/admin#customers')
 
 @app.post('/admin/customers/<int:uid>/password')
 @admin_needed
