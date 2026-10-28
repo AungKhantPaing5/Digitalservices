@@ -40,6 +40,7 @@ def init():
   c.execute('CREATE TABLE IF NOT EXISTS orders (id INTEGER PRIMARY KEY,user_id INTEGER NOT NULL REFERENCES users(id),plan TEXT NOT NULL,server_id INTEGER NOT NULL REFERENCES servers(id),client_id INTEGER REFERENCES clients(id),username TEXT,method TEXT NOT NULL,proof TEXT NOT NULL,status TEXT DEFAULT "pending",created INTEGER NOT NULL,expires INTEGER,activation_error TEXT,kind TEXT NOT NULL DEFAULT "new")')
   c.execute('CREATE TABLE IF NOT EXISTS renewals (id INTEGER PRIMARY KEY,order_id INTEGER UNIQUE NOT NULL REFERENCES orders(id),client_id INTEGER NOT NULL REFERENCES clients(id),reset_at INTEGER NOT NULL,new_quota INTEGER NOT NULL,status TEXT NOT NULL DEFAULT "scheduled",error TEXT DEFAULT "")')
   c.execute('CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY,order_id INTEGER,action TEXT NOT NULL,detail TEXT DEFAULT "",at INTEGER NOT NULL)')
+  c.execute('CREATE TABLE IF NOT EXISTS password_resets (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), admin_id INTEGER NOT NULL, at INTEGER NOT NULL)')
   c.execute('CREATE TABLE IF NOT EXISTS chat_messages (id INTEGER PRIMARY KEY,user_id INTEGER NOT NULL REFERENCES users(id),sender_admin INTEGER NOT NULL DEFAULT 0,body TEXT NOT NULL,created INTEGER NOT NULL)')
   c.execute('CREATE INDEX IF NOT EXISTS idx_chat_user_created ON chat_messages(user_id,id)')
   c.execute('CREATE TABLE IF NOT EXISTS speed_results (id INTEGER PRIMARY KEY, server_id INTEGER NOT NULL REFERENCES servers(id), measured INTEGER NOT NULL, download_mbps REAL, upload_mbps REAL, ping_ms REAL, error TEXT DEFAULT "")')
@@ -217,7 +218,8 @@ def admin():
   orders=c.execute('SELECT o.*,u.email,s.name AS server_name FROM orders o JOIN users u ON o.user_id=u.id JOIN servers s ON o.server_id=s.id ORDER BY o.id DESC LIMIT 300').fetchall()
   servers=c.execute('SELECT id,name,url,inbound,host,public_key,sni,short_id,flow,subscription_base,enabled FROM servers ORDER BY id').fetchall()
   counts=c.execute('SELECT server_id,COUNT(*) n FROM clients GROUP BY server_id').fetchall()
- return render_template('admin.html',orders=orders,servers=servers,counts={x['server_id']:x['n'] for x in counts})
+  customers=c.execute('SELECT id,email FROM users WHERE admin=0 ORDER BY id DESC LIMIT 300').fetchall()
+ return render_template('admin.html',orders=orders,servers=servers,counts={x['server_id']:x['n'] for x in counts},customers=customers)
 @app.get('/admin/proof/<int:id>')
 @admin_needed
 def proof(id):
@@ -241,6 +243,20 @@ def set_subscription(sid):
  if not re.fullmatch(r'https://[^\s?#]+',value):flash('Valid HTTPS subscription base URL required','bad');return redirect('/admin')
  with conn() as c:c.execute('UPDATE servers SET subscription_base=? WHERE id=?',(value,sid))
  flash('Subscription base URL saved. Test it against your actual 3x-ui subscription service.','ok')
+ return redirect('/admin')
+
+@app.post('/admin/customers/<int:uid>/password')
+@admin_needed
+def admin_reset_customer_password(uid):
+ password=request.form.get('new_password','')
+ if not (12<=len(password)<=128) or password.strip()!=password:
+  flash('Customer password must be 12 to 128 characters.','bad')
+  return redirect('/admin')
+ with conn() as c:
+  if not c.execute('SELECT 1 FROM users WHERE id=? AND admin=0',(uid,)).fetchone():abort(404)
+  c.execute('UPDATE users SET password=? WHERE id=?',(generate_password_hash(password),uid))
+  c.execute('INSERT INTO password_resets(user_id,admin_id,at) VALUES(?,?,?)',(uid,identity()['id'],now()))
+ flash('Customer password reset successfully. Share privately.','ok')
  return redirect('/admin')
 
 @app.post('/admin/servers/<int:sid>/edit')
