@@ -80,3 +80,22 @@ docker compose exec -T web python scripts/setup_telegram_webhook.py
 ```
 
 Never use example subscription URLs or payment proof images for real sales. Verify every real payment independently in KPay/Wave/AYA before approving.
+
+## Telegram VPN-server speed tests
+
+The bot supports admin-only `/speedtest`, `/speedtest api1`, `/speedtest apitwo`, `/speedtest api3` (also `/servers`). These return the **latest saved measurements collected on each corresponding VPN VPS**, with the Myanmar-local timestamp and age. The command does not launch an on-demand remote test.
+
+**Install the opt-in agent separately on each VPN VPS.** This uses `speedtest-cli --json --secure`; run sparingly as tests consume bandwidth and may be affected by test-server congestion. It tests the VPS connection, **not** a Myanmar client's route through the VPN. It cannot conclusively detect ISP throttling. Comparing repeated speed/ping results from a client-side probe and a control network is still necessary.
+
+On the DigitalServices **web host**:
+1. Generate `SPEED_AGENT_SECRET`: `python3 -c 'import secrets;print(secrets.token_urlsafe(36))'` and add it to `.env`.
+2. Restart web: `docker compose up -d --force-recreate web`.
+3. Rerun `docker compose exec -T web python scripts/setup_telegram_webhook.py` so the bot receives messages and approval callbacks.
+4. Get the server IDs from the Admin server database or `docker compose exec -T web python -c 'from app import conn; c=conn();print([(x["id"],x["name"]) for x in c.execute("SELECT id,name FROM servers")])'`.
+
+On **each** separate VPN VPS, securely copy `scripts/vpn_server_speed_agent.py` from the private repo, and install `speedtest-cli` (Ubuntu: `sudo apt install speedtest-cli`).
+Set `DS_MONITOR_URL=https://digitalservices.payapi.uk`, `DS_SERVER_ID=<the database ID for this particular VPN server>`, and `DS_SPEED_SECRET=<same generated secret>` as private process environment values. Run `python3 vpn_server_speed_agent.py` to test. For recurring monitoring schedule it via a protected root-owned systemd timer or cron job, e.g. every six hours, *after* ensuring credentials remain out of shell history, public process arguments, logs and Git.
+
+The reporting API requires HTTPS and the long shared secret and retains only 100 latest measurements per server. If the secret is leaked, rotate it centrally and update all agents. A separate agent secret per server is a future hardening improvement.
+
+No automatic network-wide throttling claim is made from single-run speed results.
