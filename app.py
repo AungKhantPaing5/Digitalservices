@@ -684,4 +684,43 @@ def server_health():
 
 @app.get('/health')
 def health():return {'ok':True}
+
+@app.after_request
+def search_visibility_headers(response):
+ # Only the public marketing homepage is indexable. Account, payment, admin,
+ # API and monitoring routes must never appear in public search results.
+ if request.path not in ('/', '/robots.txt', '/sitemap.xml') and not request.path.startswith('/static/'):
+  response.headers['X-Robots-Tag'] = 'noindex, nofollow, noarchive'
+ return response
+
+@app.get('/robots.txt')
+def robots_txt():
+ body = """User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /dashboard
+Disallow: /chat
+Disallow: /monitoring
+Disallow: /telegram
+Disallow: /login
+Disallow: /register
+Disallow: /buy/
+Sitemap: https://digitalservices.payapi.uk/sitemap.xml
+"""
+ return app.response_class(body, mimetype='text/plain')
+
+@app.get('/sitemap.xml')
+def sitemap_xml():
+ # Only list the public landing page; customer and payment URLs are private.
+ body = """<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://digitalservices.payapi.uk/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>
+"""
+ return app.response_class(body, mimetype='application/xml')
+
 if __name__=='__main__':app.run(host='0.0.0.0',port=8000)
